@@ -1,0 +1,47 @@
+eOperationTypes	_AST_C_	csaOPR_TYPES
+
+
+OPR_NULL	No Operation
+OPR_ENDOFSTATEMENT	Reset stack pointer
+
+OPR_JUMP		Jump if STACK[0] != 0
+OPR_JUMPFALSE	Jump if STACK[0] == 0
+OPR_CALL		Call a function
+OPR_CALL_METHOD	Call a method
+OPR_RETURN		Retrurn from a function/method
+
+OPR_OVR_NS		Override Current Namespace
+OPR_OVR_CLASS	Override Current Class
+
+OPR_PUSH_VAR	Push Variable
+OPR_PUSH_INT	Push Integer
+OPR_PUSH_STR	Push String
+OPR_PUSH_DCONST	Push Dynamic Constant
+
+OPR_INDEX		Array Index
+OPR_MEMBER		Object Member
+OPR_NEW		New Object
+
+OPR_MUL		Multiply
+OPR_DIV		Divide
+OPR_ADD		Add
+OPR_SUB		Subtract
+OPR_BSL		Bit Shift Left
+OPR_BSR		Bit Shift Right
+
+OPR_BWOR		Bitwise OR
+OPR_BWAND		Bitwise AND
+OPR_BWXOR		Bitwise XOR
+OPR_BWNOT		Bitwise NOT
+OPR_BOOLOR		Boolean OR
+OPR_BOOLAND		Boolean AND
+OPR_BOOLNOT		Boolean NOT
+OPR_ISEQU		Is Equal?
+OPR_ISGT		Is Less Than?
+OPR_ISLT		Is Greater Than?
+
+OPR_LVALUE
+OPR_ASSIGN		Assign an expression to another
+OPR_STORE		Pop into a variable
+
+OPR_LAST

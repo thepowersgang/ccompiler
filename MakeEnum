@@ -1,0 +1,49 @@
+#!/usr/bin/php
+<?php
+$lines = file($argv[1]);
+
+list($lEnumName,$lCondition,$lArrayName) = preg_split('/\s+/', trim($lines[0]));
+
+$lEnumValues = array();
+
+for( $i = 1; $i < count($lines); $i++ )
+{
+	$line = trim($lines[$i]);
+	if(empty($line))	continue;
+	
+	//echo $line;
+	list($ident,) = preg_split('/\s+/', $line, 2);
+	$lEnumValues[] = $ident;
+}
+
+echo "/* *******************\n";
+echo "   Enum & Lookup Array\n";
+echo "   $enumName\n";
+echo "   ******************/\n";
+echo "\n";
+echo "#ifndef _",strtoupper($lEnumName),"_ENUM_H\n";
+echo "#define _",strtoupper($lEnumName),"_ENUM_H\n";
+echo "\n";
+
+echo "enum {$enumName} {\n";
+foreach($lEnumValues as $ident)
+{
+	echo "\t",$ident,",\n";
+}
+echo "\tNUM_",strtoupper($lEnumName),"\n";
+echo "};\n";
+echo "\n";
+echo "#ifdef {$lCondition}\n";
+echo "const char *{$lArrayName}[] = {\n";
+foreach($lEnumValues as $ident)
+{
+	echo "\t\"",$ident,"\",\n";
+}
+echo "\t\"\"\n";
+echo "};\n";
+echo "#endif\n";
+echo "\n";
+echo "#endif\n";
+
+//print_r($lEnumValues);
+?>
