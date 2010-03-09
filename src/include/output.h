@@ -33,6 +33,8 @@ typedef struct sElf_x86_Function
 
 // === Functions ===
 extern void	Output_AppendCode(tOutput_Function *Func, uint8_t Byte);
+extern void	Output_AppendAbs16(tOutput_Function *Func, uint16_t Value);
+extern void	Output_AppendAbs32(tOutput_Function *Func, uint32_t Value);
 extern void Output_AppendReloc16(tOutput_Function *Func, int16_t Addend, char *SymName);
 extern void Output_AppendReloc32(tOutput_Function *Func, int32_t Addend, char *SymName);
 

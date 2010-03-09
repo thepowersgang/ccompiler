@@ -91,5 +91,29 @@ void X86_ProcessNode(tOutput_Function *Func, int CurBPOfs, tAST_Node *Node)
 
 void X86_DoAction(tOutput_Function *Func, int CurBPOfs, tAST_Node *Node)
 {
+	switch( Node->Type )
+	{
+	case NODETYPE_INTEGER:
+		if(Node->Integer.Value > ((uint64_t)1<<32)) {
+			// mov edx, value >> 32
+			Output_AppendCode(Func, 0xC7);	// MOV RIX
+			Output_AppendCode(Func, 0x10);	// (mod=0, r=edx(2), m=0)
+			Output_AppendAbs32(Func, Node->Integer.Value >> 32);
+		}
+		// mov eax, value
+		Output_AppendCode(Func, 0xC7);	// MOV RIX
+		Output_AppendCode(Func, 0x00);	// (mod=0, r=eax(0), m=0)
+		Output_AppendAbs32(Func, Node->Integer.Value & 0xFFFFFFFF);
+		break;
 	
+	
+	case NODETYPE_ADD:
+	// TODO: More common code
+		X86_DoAction(Func, CurBPOfs, Node->BinOp.Left);
+		// Hmm.. I need to have registers stay persistent over this, maybe
+		// have a bitmap with used registers?
+		X86_DoAction(Func, CurBPOfs, Node->BinOp.Right);
+		break;
+	
+	}
 }

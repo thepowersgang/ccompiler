@@ -47,6 +47,44 @@ void Output_AppendCode(tOutput_Function *Func, uint8_t Byte)
 	Func->Code[Func->CodeLength++] = Byte;
 }
 
+void Output_AppendAbs16(tOutput_Function *Func, uint16_t Value)
+{
+	printf("Output_AppendAbs16: (Func=%p, Value=0x%04x)\n", Func, Value);
+	if( Func->CodeLength + 2 > Func->CodeSpace )
+	{
+		Func->CodeSpace += CODE_STEP;
+		Func->Code = realloc(Func->Code, Func->CodeSpace);
+		if(!Func->Code)	perror("Unable to allocate space");
+	}
+	
+	//if( Func->LittleEndian ) {
+		Func->Code[Func->CodeLength + 0] = Value&0xFF;
+		Func->Code[Func->CodeLength + 1] = Value>>8;
+	//}
+	
+	Func->CodeLength += 2;
+}
+
+void Output_AppendAbs32(tOutput_Function *Func, uint32_t Value)
+{
+	printf("Output_AppendAbs32: (Func=%p, Value=0x%08x,)\n", Func, Value);
+	if( Func->CodeLength + 4 > Func->CodeSpace )
+	{
+		Func->CodeSpace += CODE_STEP;
+		Func->Code = realloc(Func->Code, Func->CodeSpace);
+		if(!Func->Code)	perror("Unable to allocate space");
+	}
+	
+	//if( Func->LittleEndian ) {
+		Func->Code[Func->CodeLength + 0] = Value & 0xFF;
+		Func->Code[Func->CodeLength + 1] = (Value >>  8) & 0xFF;
+		Func->Code[Func->CodeLength + 2] = (Value >> 16) & 0xFF;
+		Func->Code[Func->CodeLength + 3] = (Value >> 24) & 0xFF;
+	//}
+	
+	Func->CodeLength += 4;
+}
+
 void Output_AppendReloc16(tOutput_Function *Func, int16_t Addend, char *SymName)
 {
 	printf("Output_AppendReloc16: (Func=%p, Addend=0x%04x, SymName='%s')\n", Func, Addend, SymName);
