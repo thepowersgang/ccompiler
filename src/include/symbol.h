@@ -10,6 +10,15 @@
 #ifndef _SYMBOL_H_
 #define _SYMBOL_H_
 
+typedef struct sType	tType;
+typedef struct sTypedef	tTypedef;
+typedef struct sSymbol	tSymbol;
+typedef struct sCodeBlock	tCodeBlock;
+typedef struct sFunction	tFunction;
+
+#include <ast.h>
+
+// === CONSTANTS ===
 enum eSymbolClasses
 {
 	SYMCLASS_NULL,
@@ -25,7 +34,7 @@ enum eSymbolClasses
 };
 
 // === STRUCTURES ===
-typedef struct sType
+struct sType
 {
 	 int	Type;	// 0: Void, 1: Integer, 2: Structure, 3: Union
 	 int	Linkage;	// 0: Def, 1: Local, 2: External
@@ -38,30 +47,33 @@ typedef struct sType
 			 int	Bits;
 		}	Integer;
 	};
-}	tType;
+	 int	Count;	// Defaults to 1 (array size)
+	size_t	Size;	// Size in words (pointers)
+};
 
-typedef struct sTypedef
+struct sTypedef
 {
 	char	*Name;
 	tType	*Base;
-}	tTypedef;
+};
 
-typedef struct sSymbol
+struct sSymbol
 {
 	struct sSymbol	*Next;
 	 int	Class;
 	tType	*Type;
 
+	 int	Offset;
 	char	*Name;
-}	tSymbol;
+};
 
-typedef struct sCodeBlock
+struct sCodeBlock
 {
 	struct sCodeBlock	*Parent;
 	tSymbol	*LocalVariables;
-}	tCodeBlock;
+};
 
-typedef struct sFunction
+struct sFunction
 {
 	struct sFunction	*Next;
 	 int	Line;
@@ -69,9 +81,10 @@ typedef struct sFunction
 	tType	*Return;
 	char	*Name;
 
-	void	*Code;	// Actually a tAST_Node
+	tAST_Node	*Code;	// Actually a tAST_Node
 	tSymbol	*Arguments;
-}	tFunction;
+	 int	CurArgSize;
+};
 
 // === FUNCTIONS ===
 extern void	Symbol_EnterBlock(void);

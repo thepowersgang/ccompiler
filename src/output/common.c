@@ -67,7 +67,7 @@ void Output_AppendAbs16(tOutput_Function *Func, uint16_t Value)
 
 void Output_AppendAbs32(tOutput_Function *Func, uint32_t Value)
 {
-	printf("Output_AppendAbs32: (Func=%p, Value=0x%08x,)\n", Func, Value);
+	printf("Output_AppendAbs32: (Func=%p, Value=0x%08x)\n", Func, Value);
 	if( Func->CodeLength + 4 > Func->CodeSpace )
 	{
 		Func->CodeSpace += CODE_STEP;

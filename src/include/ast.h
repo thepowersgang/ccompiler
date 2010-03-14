@@ -3,7 +3,9 @@
  * - By John Hodge (thePowersGang)
  */
 #ifndef _AST_H_
-#define _ASH_H_
+#define _AST_H_
+
+typedef struct sAST_Node	tAST_Node;
 
 #include <stdint.h>
 #include <symbol.h>
@@ -71,7 +73,7 @@ enum eAST_NodeTypes
 	NUM_NODETYPES
 };
 
-typedef struct sAST_Node
+struct sAST_Node
 {
 	 int	Type;
 
@@ -147,7 +149,7 @@ typedef struct sAST_Node
 		}	While;
 	};
 
-}	tAST_Node;
+};
 
 extern void	AST_DumpTree(tAST_Node *Node, int Depth);
 extern tAST_Node	*AST_NewNode(int Type);

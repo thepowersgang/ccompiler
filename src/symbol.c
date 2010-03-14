@@ -70,6 +70,7 @@ tType *Symbol_CreateIntegralType(int bSigned, int bConst, int Linkage, int Size,
 	ret->PtrDepth = Depth;
 	ret->Integer.bSigned = bSigned;
 	ret->Integer.Bits = Size;
+	ret->Size = Size/32;
 	
 	return ret;
 }
@@ -188,7 +189,7 @@ void *Symbol_GetFunction(tType *Return, char *Name)
 
 void Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name)
 {
-	tSymbol	*sym, *prev;
+	tSymbol	*sym, *prev = NULL;
 	 int	i = ID;
 	
 	printf("Symbol_SetArgument: (Func=%p, ID=%i, ..., Name='%s')\n", Func, ID, Name);
@@ -202,6 +203,13 @@ void Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name)
 		sym = malloc(sizeof(tSymbol));
 		sym->Type = Type;
 		sym->Name = Name;
+		sym->Offset = -Func->CurArgSize-1;	// -1 to allow local vars to have offset zero
+		Func->CurArgSize += Type->Size;
+		sym->Next = NULL;
+		if(prev)
+			prev->Next = sym;
+		else
+			Func->Arguments = sym;
 		return ;
 	}
 	else	// Found it

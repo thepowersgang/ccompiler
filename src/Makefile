@@ -12,8 +12,8 @@ DEPFILES  = $(OBJ:%.o=%.d)
 BIN = ../cc
 
 CPPFLAGS = -I./include
-CFLAGS	= -Wall -Werror $(CPPFLAGS)
-LDFLAGS =
+CFLAGS	= -Wall -Werror $(CPPFLAGS) -g
+LDFLAGS = -g
 
 .PHONY:	all
 
