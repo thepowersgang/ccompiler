@@ -7,6 +7,7 @@
  *
  * symbol.c - Global and Local symbol manipulation
  */
+#define DEBUG	0
 #include <global.h>
 #include <symbol.h>
 #include <string.h>
@@ -23,6 +24,7 @@ tType	*Symbol_CreateIntegralType(int bSigned, int bConst, int Linkage, int Size,
 tSymbol	*Symbol_GetLocalVariable(char *Name);
 tSymbol	*Symbol_ResolveSymbol(char *Name);
  int	Symbol_GetSymClass(tSymbol *Symbol);
+void	Symbol_AddGlobalVariable(tType *Type, char *Name, uint64_t InitValue);
 void	Symbol_SetFunction(tFunction *Fcn);
 void	Symbol_SetFunctionCode(tFunction *Fcn, void *Block);
 void	Symbol_DumpTree(void);
@@ -83,25 +85,25 @@ tSymbol *Symbol_GetLocalVariable(char *Name)
 	tCodeBlock	*block;
 	tSymbol	*sym;
 	
-	printf("Symbol_GetLocalVariable: (Name='%s')\n", Name);
+	DEBUG_S("Symbol_GetLocalVariable: (Name='%s')\n", Name);
 	
 	for( block = gpCurrentBlock; block; block = block->Parent )
 	{
-		printf(" block = %p\n", block);
+		DEBUG_S(" block = %p\n", block);
 		for( sym = block->LocalVariables; sym; sym = sym->Next )
 		{
-			printf(" strcmp(Name, '%s')\n", sym->Name);
+			DEBUG_S(" strcmp(Name, '%s')\n", sym->Name);
 			if(strcmp(Name, sym->Name) == 0)
 				return sym;
 		}
 	}
 
-	printf(" gpCurrentFunction = %p\n", gpCurrentFunction);
-	printf(" gpCurrentFunction->Arguments = %p\n", gpCurrentFunction->Arguments);
+	DEBUG_S(" gpCurrentFunction = %p\n", gpCurrentFunction);
+	DEBUG_S(" gpCurrentFunction->Arguments = %p\n", gpCurrentFunction->Arguments);
 	for( sym = gpCurrentFunction->Arguments; sym; sym = sym->Next )
 	{
-		printf(" sym = %p\n", sym);
-		printf(" strcmp(Name, '%s')\n", sym->Name);
+		DEBUG_S(" sym = %p\n", sym);
+		DEBUG_S(" strcmp(Name, '%s')\n", sym->Name);
 		if(strcmp(Name, sym->Name) == 0)
 			return sym;
 	}
@@ -110,12 +112,12 @@ tSymbol *Symbol_GetLocalVariable(char *Name)
 
 tSymbol *Symbol_ResolveSymbol(char *Name)
 {
-	printf("Symbol_ResolveSymbol: (Name='%s')\n", Name);
+	DEBUG_S("Symbol_ResolveSymbol: (Name='%s')\n", Name);
 	{
 		tSymbol	*sym = gpGlobalSymbols;
 		for(; sym; sym = sym->Next)
 		{
-			printf(" Symbol_ResolveSymbol: sym = %p\n", sym);
+			DEBUG_S(" Symbol_ResolveSymbol: sym = %p\n", sym);
 			if(strcmp(Name, sym->Name) == 0)
 				return sym;
 		}
@@ -124,7 +126,7 @@ tSymbol *Symbol_ResolveSymbol(char *Name)
 		tFunction	*fcn;
 		for(fcn=gpFunctions;fcn;fcn=fcn->Next)
 		{
-			printf(" Symbol_ResolveSymbol: fcn = %p\n", fcn);
+			DEBUG_S(" Symbol_ResolveSymbol: fcn = %p\n", fcn);
 			if(strcmp(Name, fcn->Name) == 0)
 				return &fcn->Sym;
 		}
@@ -151,11 +153,44 @@ int Symbol_GetSymClass(tSymbol *Symbol)
 	return Symbol->Class;
 }
 
+void Symbol_AddGlobalVariable(tType *Type, char *Name, uint64_t InitValue)
+{
+	tSymbol *sym, *prev = NULL;
+	for(sym = gpGlobalSymbols;
+		sym;
+		prev = sym, sym = sym->Next
+		)
+	{
+		if(strcmp(sym->Name, Name) == 0)
+		{
+			if(sym->Type != Type)
+				SyntaxErrorF(
+					"Conflicting definiton of '%s', previous definiton on line %i",
+					sym->Line
+					);
+		}
+	}
+	
+	sym = malloc(sizeof(tSymbol));
+	sym->Next = NULL;
+	sym->Line = giLine;
+	sym->Name = Name;
+	sym->Type = Type;
+	sym->Class = 0;
+	sym->Offset = 0;
+	sym->InitialValue = InitValue;
+	
+	if(prev)
+		prev->Next = sym;
+	else
+		gpGlobalSymbols = sym;
+}
+
 void *Symbol_GetFunction(tType *Return, char *Name)
 {
 	tFunction	*ret, *prev;
 	
-	printf("Symbol_GetFunction: (Return=%p, Name='%s')\n", Return, Name);
+	DEBUG_S("Symbol_GetFunction: (Return=%p, Name='%s')\n", Return, Name);
 	
 	for(ret = gpFunctions;
 		ret;
@@ -192,7 +227,7 @@ void Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name)
 	tSymbol	*sym, *prev = NULL;
 	 int	i = ID;
 	
-	printf("Symbol_SetArgument: (Func=%p, ID=%i, ..., Name='%s')\n", Func, ID, Name);
+	DEBUG_S("Symbol_SetArgument: (Func=%p, ID=%i, ..., Name='%s')\n", Func, ID, Name);
 
 	for(sym = Func->Arguments;
 		sym && i--;
@@ -223,7 +258,7 @@ void Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name)
 
 void Symbol_SetFunction(tFunction *Fcn)
 {
-	printf("Symbol_SetFunction: (Fcn=%p)\n", Fcn);
+	DEBUG_S("Symbol_SetFunction: (Fcn=%p)\n", Fcn);
 	gpCurrentFunction = Fcn;
 	if(Fcn->Code) {
 		SyntaxErrorF(
@@ -240,6 +275,7 @@ void Symbol_SetFunctionCode(tFunction *Fcn, void *Block)
 
 void Symbol_DumpTree(void)
 {
+	#if DEBUG
 	tSymbol *sym;
 	tFunction	*fcn;
 	
@@ -259,4 +295,5 @@ void Symbol_DumpTree(void)
 		printf(" %s()\n", fcn->Name);
 		AST_DumpTree(fcn->Code, 1);
 	}
+	#endif
 }

@@ -9,6 +9,7 @@
  * 
  * Performs optimisations on the AST
  */
+#define DEBUG	0
 #include <global.h>
 #include <ast.h>
 #include <symbol.h>
@@ -16,18 +17,34 @@
 
 // === IMPORTS ===
 extern tAST_Node	*Opt1_Optimise(tAST_Node *Node);
+extern tAST_Node	*Opt2_Optimise(tAST_Node *Node);
 extern tFunction	*gpFunctions;
 
 // === PROTOTYPES ===
-void	Optimiser_DoPass1(void);
+void	Optimiser_ProcessTree(void);
 void	Optimiser_DoPass(tOptimiseCallback *Callback);
 tAST_Node	*Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node);
 void	Optimiser_Expand(tAST_Node *Node, tOptimiseCallback *Callback);
 
 // === CODE ===
-void Optimiser_DoPass1(void)
+void Optimiser_ProcessTree(void)
 {
 	Optimiser_DoPass( Opt1_Optimise );
+	Optimiser_DoPass( Opt2_Optimise );
+}
+
+/**
+ * \brief Statically optimises a single node (used by the variable
+ *        definition code)
+ */
+tAST_Node *Optimiser_StaticOpt(tAST_Node *Node)
+{
+	tAST_Node	*tmp;
+	tmp = Optimiser_ProcessNode(Opt1_Optimise, Node);
+	if(tmp != Node) {
+		AST_DeleteNode(Node);
+	}
+	return tmp;
 }
 
 void Optimiser_DoPass(tOptimiseCallback *Callback)
@@ -38,10 +55,10 @@ void Optimiser_DoPass(tOptimiseCallback *Callback)
 		fcn;
 		fcn = fcn->Next)
 	{
-		printf("Optimising %s()\n", fcn->Name);
+		DEBUG1("Optimising %s()\n", fcn->Name);
 		tmp = Optimiser_ProcessNode(Callback, fcn->Code);
 		if(tmp != fcn->Code) {
-			free(fcn->Code);
+			AST_DeleteNode(fcn->Code);
 			fcn->Code = tmp;
 		}
 	}
@@ -50,12 +67,12 @@ void Optimiser_DoPass(tOptimiseCallback *Callback)
 //! \note Undef'd at end of function
 #define REPLACE(v)	do{\
 	tAST_Node	*new = Optimiser_ProcessNode(Callback, (v));\
-	printf("%p[%03x] ", (v),(v)->Type);\
+	DEBUG2("%p[%03x] ", (v),(v)->Type);\
 	if(new != (v)) {\
-		printf("changed (now %p[%03x])\n", new,new->Type);\
+		DEBUG2("changed (now %p[%03x])\n", new,new->Type);\
 		free((v)); (v) = new;\
 	}\
-	printf("no change\n");\
+	DEBUG2("no change\n");\
 	}while(0)
 
 tAST_Node *Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node)
@@ -156,7 +173,7 @@ tAST_Node *Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node)
 		fprintf(stderr, "Optimiser_ProcessNode - TODO: Handle node type 0x%x\n", Node->Type);
 		break;
 	}
-	printf("Node %p type 0x%x - Processing using %p\n", Node, Node->Type, Callback);
+	DEBUG3("Node %p type 0x%x - Processing using %p\n", Node, Node->Type, Callback);
 	return Callback(Node);
 }
 #undef REPLACE

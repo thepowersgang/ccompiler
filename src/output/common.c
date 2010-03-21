@@ -18,22 +18,39 @@
 // === IMPORTS ===
 extern tFunction	*gpFunctions;
 extern tSymbol	*gpGlobalSymbols;
-extern tOutput_Function	*X86_GenerateFunction(tFunction *Func);
+extern int	X86_GenerateFunction(FILE *OutFile, tFunction *Func);
+extern int	X86_GenerateProlouge(FILE *OutFile);
 
 // === PROTOTYPES ===
 void	GenerateOutput(char *File);
+#if 0
 void	Output_AppendCode(tOutput_Function *Func, uint8_t Byte);
 void	Output_AppendReloc16(tOutput_Function *Func, int16_t Addend, char *SymName);
 void	Output_AppendReloc32(tOutput_Function *Func, int32_t Addend, char *SymName);
 void	Output_Int_AddReloc(tOutput_Function *Func, int Bits, uint Offset, uint Addend, char *Name);
+#endif
 
 // === CODE ===
 void GenerateOutput(char *File)
 {
-	printf("gpFunctions->Name = '%s'\n", gpFunctions->Name);
-	X86_GenerateFunction(gpFunctions);
+	tFunction	*func;
+	FILE	*fp = stdout;
+	
+	X86_GenerateProlouge(fp);
+	
+	for(func = gpFunctions;
+		func;
+		func = func->Next
+		)
+	{
+		//printf("func->Name = '%s'\n", func->Name);
+		printf("\n");
+		printf("; Function '%s'\n", func->Name);
+		X86_GenerateFunction(fp, func);
+	}
 }
 
+#if 0
 void Output_AppendCode(tOutput_Function *Func, uint8_t Byte)
 {
 	printf("Output_AppendCode: (Func=%p, Byte=0x%02x)\n", Func, Byte);
@@ -136,3 +153,4 @@ void Output_Int_AddReloc(tOutput_Function *Func, int Bits, uint Offset, uint Add
 	Func->Relocs[Func->nRelocs].Offset = Offset;
 	Func->nRelocs ++;
 }
+#endif

@@ -62,9 +62,13 @@ struct sSymbol
 	struct sSymbol	*Next;
 	 int	Class;
 	tType	*Type;
+	
+	 int	Line;
 
 	 int	Offset;
 	char	*Name;
+	
+	uint64_t	InitialValue;
 };
 
 struct sCodeBlock
@@ -86,6 +90,10 @@ struct sFunction
 	 int	CurArgSize;
 };
 
+// === GLOBALS ===
+extern tFunction	*gpFunctions;
+extern tSymbol	*gpGlobalSymbols;
+
 // === FUNCTIONS ===
 extern void	Symbol_EnterBlock(void);
 extern void	Symbol_LeaveBlock(void);
@@ -94,6 +102,7 @@ extern tType	*Symbol_CreateIntegralType(int bSigned, int bConst, int Linkage, in
 extern tSymbol	*Symbol_GetLocalVariable(char *Name);
 extern tSymbol	*Symbol_ResolveSymbol(char *Name);
 extern int	Symbol_GetSymClass(tSymbol *Symbol);
+extern void	Symbol_AddGlobalVariable(tType *Type, char *Name, uint64_t InitValue);
 extern void	*Symbol_GetFunction(tType *Return, char *Name);
 extern void	Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name);
 extern void	Symbol_SetFunction(tFunction *Fcn);

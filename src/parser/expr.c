@@ -7,7 +7,7 @@
  * 
  * expr.c - Token to AST Parser
  */
-#define	DEBUG	3
+#define	DEBUG	0
 #include "global.h"
 #include <stdio.h>
 #include <strings.h>
@@ -43,6 +43,7 @@ extern void SetFunction(char *name);
 extern void SetFunctionArgs(int argc, int argt);
 extern void RestoreFunction();
 extern void	CreateOutput();
+extern tAST_Node	*Optimiser_StaticOpt(tAST_Node *Node);
 
 // === Prototypes ===
 tType	*GetType();
@@ -155,6 +156,7 @@ void GetDefinition(void)
 	void	*ptr;
 	 int	tok;
  	 int	i;
+ 	tAST_Node	*node;
 	
 	type = GetType();
 	SyntaxAssert(GetToken(), TOK_IDENT);
@@ -165,9 +167,17 @@ void GetDefinition(void)
 	{
 	case TOK_SEMICOLON:
 		// Create variable in .bss / Define extern var
+		Symbol_AddGlobalVariable(type, strdup(name), 0);
 		break;
 	case TOK_ASSIGNEQU:
 		// Create variable in .data
+		node = DoExpr0();
+		node = Optimiser_StaticOpt(node);
+		if(node->Type != NODETYPE_INTEGER) {
+			SyntaxErrorF("Non static initialiser");
+			exit(1);
+		}
+		Symbol_AddGlobalVariable(type, strdup(name), node->Integer.Value);
 		break;
 	case TOK_PAREN_OPEN:
 		ptr = Symbol_GetFunction(type, strdup(name));

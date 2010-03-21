@@ -13,7 +13,7 @@ extern void	GetDefinition(void);
 extern void	InitialiseAST(void);
 extern void	InitialiseData(void);
 extern void Symbol_DumpTree(void);
-extern void	Optimiser_DoPass1(void);
+extern void	Optimiser_ProcessTree(void);
 extern void	GenerateOutput(char *File);
 
 // Parser Variables
@@ -27,14 +27,7 @@ char	*gsTokenStart = NULL;
 char	*gsCurFile = NULL;
 char	*gsInputFile = NULL;
 char	*gsOutputFile = "out.phc";
-char	*gsInputData =
-	"<?php\n"
-	"// Test PHP Program for php bytecode compiler\n"
-	"$a = 10;\n"
-	"$b = 0x10;\n"
-	"$a += $b;\n"
-	"$str = 'LoL';\n"
-	"?>";
+char	*gsInputData = NULL;
 
 void ParseCommandLine(int argc, char *argv[]);
 void PrintSyntax(char *exename);
@@ -84,7 +77,7 @@ int main(int argc, char *argv[])
 
 	Symbol_DumpTree();
 
-	Optimiser_DoPass1();
+	Optimiser_ProcessTree();
 	
 	Symbol_DumpTree();
 
@@ -112,7 +105,7 @@ void ParseCommandLine(int argc, char *argv[])
 				gsOutputFile = argv[++i];
 				break;
 			default:
-				printf("Unknow command line option '-%c'\n", argv[i][1]);
+				fprintf(stderr, "Unknow command line option '-%c'\n", argv[i][1]);
 			case 'h':
 				PrintSyntax(argv[0]);
 				exit(0);
@@ -125,13 +118,13 @@ void ParseCommandLine(int argc, char *argv[])
 
 	if(!gsInputFile)
 	{
-		printf("An input filename is required.\n");
+		fprintf(stderr, "An input filename is required.\n");
 		exit(-1);
 	}
 
 	infile = fopen(gsInputFile, "r");
 	if(!infile)	{
-		printf("Unable to open file '%s'\n", gsInputFile);
+		fprintf(stderr, "Unable to open file '%s'\n", gsInputFile);
 		exit(-1);
 	}
 
@@ -150,7 +143,7 @@ void ParseCommandLine(int argc, char *argv[])
 
 void PrintSyntax(char *exename)
 {
-	printf(
+	fprintf(stderr, 
 		"Usage: %s [-o <output file>] <input file>\n"
 		" -o <output file>\t Specify Output file\n"
 		" -h\t\t Print this message\n"

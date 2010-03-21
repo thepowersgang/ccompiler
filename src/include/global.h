@@ -6,10 +6,15 @@ GLOBAL.H
 #ifndef _GLOBAL_H
 #define _GLOBAL_H
 
+#if DEBUG
+# define DEBUG_S(...)	printf(__VA_ARGS__)
+#else
+# define DEBUG_S(...)
+#endif
+
 // ---
 #define STR(x...) #x
 #define EXPAND_STR(x...) STR(x)
-#define MAKE_ENUM(name,v...) enum name { v }
 // ---
 
 #include <stdlib.h>

@@ -10,7 +10,11 @@
 
 #define	SUPPORT_CPP	0
 
-#define RET_TOK(tok)	do{giToken=(tok);printf("GetToken: RETURN %s\n",GetTokenStr((tok)));return(tok);}while(0)
+#if DEBUG
+# define RET_TOK(tok)	do{giToken=(tok);printf("GetToken: RETURN %s\n",GetTokenStr((tok)));return(tok);}while(0)
+#else
+# define RET_TOK(tok)	do{giToken=(tok);return (tok);}while(0)
+#endif
 
 // === IMPORTS ===
 extern char	*gsNextChar;
@@ -302,21 +306,25 @@ doPPComment:
 			gsNextChar ++;
 		giTokenLength = gsNextChar - sStart;
 
+		#if DEBUG
 		{
 		char	*tmp = strndup(gsTokenStart,giTokenLength);
 		printf(" GetToken: ident/rsvdwd = '%s'\n", tmp);
 		free(tmp);
 		}
+		#endif
 	
 		rword = GetReservedWord();
+		#if DEBUG
 		printf(" GetToken: rword = %i\n", rword);
+		#endif
 		if(rword > 0)
 			RET_TOK( TOK_RSVDWORD );
 		else
 			RET_TOK( TOK_IDENT );
 	}
 
-	printf("Unknown symbol '%c' (0x%x)\n", ch, ch);
+	fprintf(stderr, "Unknown symbol '%c' (0x%x)\n", ch, ch);
 	ParseError("Unknown symbol");
 	return 0;
 }
@@ -339,7 +347,9 @@ int LookAhead()
 	char	*oldStart = gsTokenStart;
 	char	*oldEnd = gsNextChar;
 
+	#if DEBUG
 	printf("LookAhead: ()\n");
+	#endif
 
 	newToken = GetToken();
 
