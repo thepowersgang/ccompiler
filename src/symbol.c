@@ -320,6 +320,7 @@ tType *Symbol_ParseStruct(char *Name)
 	tStruct	*str;
 	GetToken();	// Eat {
 	
+	// Check for a duplicate
 	if( Name ) {
 		tStruct	*ele;
 		for( ele = gpStructures; ele; ele = ele->Next )
@@ -331,11 +332,13 @@ tType *Symbol_ParseStruct(char *Name)
 		}
 	}
 	
+	// Allocate
 	str = malloc( sizeof(tStruct) );
 	str->Name = Name;
 	str->NumElements = 0;
 	str->Elements = NULL;
 	
+	// Get contents
 	while( LookAhead() == TOK_IDENT )
 	{
 		type = GetType();
@@ -363,6 +366,9 @@ tType *Symbol_ParseStruct(char *Name)
 	ret = calloc(1, sizeof(tType));
 	ret->Type = 2;
 	ret->StructUnion = str;
+	
+	str->Next = gpStructures;
+	gpUnions = str;
 	
 	return ret;
 }
@@ -433,11 +439,25 @@ tType *Symbol_ParseUnion(char *Name)
 	ret->Type = 3;
 	ret->StructUnion = un;
 	
+	un->Next = gpUnions;
+	gpUnions = un;
+	
 	return ret;
 }
 
 tType *Symbol_GetUnion(char *Name)
 {
+	tStruct	*ele;
+	tType	*ret;
+	for( ele = gpUnions; ele; ele = ele->Next )
+	{
+		if(strcmp(ele->Name, Name) == 0) {
+			ret = calloc(1, sizeof(tType));
+			ret->Type = 3;
+			ret->StructUnion = ele;
+			return ret;
+		}
+	}
 	return NULL;
 }
 

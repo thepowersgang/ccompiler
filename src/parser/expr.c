@@ -182,19 +182,23 @@ tType *GetType()
 			char	*name = NULL;
 			tok = GetToken();
 			fprintf(stderr, "DEBUG: TODO - enums\n");
+			// Get name
 			if(tok == TOK_IDENT) {
 				name = strndup(gsTokenStart, giTokenLength);
 				tok = GetToken();
 			}
+			// Get definition
 			if(tok == TOK_BRACE_OPEN) {
 				PutBack();	// Symbol_ParseStruct wants the opeing brace
 				ret = Symbol_ParseEnum(name);
 				tok = GetToken();
 			}
+			// Unnamed and undefined
 			else if(!name) {
 				SyntaxError("Expected union name");
 				return NULL;
 			}
+			// Named and undefined
 			else
 				ret = Symbol_GetEnum(name);
 			goto ptrAndAccess;
