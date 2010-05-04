@@ -39,6 +39,9 @@ typedef struct {
 extern tConstantString	*gaStrings;
 extern int	giStringCount;
 
+extern int	giToken;
+extern int	giTokenLength;
+extern char	*gsTokenStart;
 
 #ifdef DEBUG
 # if DEBUG >= 3

@@ -17,15 +17,12 @@
 tAST_Node *Opt2_Optimise(tAST_Node *Node)
 {
 	tAST_Node	*ret;
-	switch(Node->Type)
-	{
-	case NODETYPE_IF:
-		if( Node->If.Test->Type != NODETYPE_INTEGER )	return Node;
-		break;
 	
-	default:
+	if(Node->Type != NODETYPE_IF)
 		return Node;
-	}
+		
+	if( Node->If.Test->Type != NODETYPE_INTEGER )
+		return Node;
 	
 	if( Node->If.Test->Integer.Value )
 	{

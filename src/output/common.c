@@ -10,18 +10,28 @@
 #include <global.h>
 #include <symbol.h>
 #include <output.h>
+#include <string.h>
+
+#define _CONCAT(a,b)	a##b
+#define CONCAT(a,b)	_CONCAT(a,b)
 
 // === CONSTANTS ===
 #define CODE_STEP	1024
 #define RELOC_STEP	16
+
+//#define OUTPUT_FORMAT	VM16CISC
+#define OUTPUT_FORMAT	X86
 
 // === IMPORTS ===
 extern tFunction	*gpFunctions;
 extern tSymbol	*gpGlobalSymbols;
 extern int	X86_GenerateFunction(FILE *OutFile, tFunction *Func);
 extern int	X86_GenerateProlouge(FILE *OutFile);
+extern int	VM16CISC_GenerateFunction(FILE *OutFile, tFunction *Func);
+extern int	VM16CISC_GenerateProlouge(FILE *OutFile);
 
 // === PROTOTYPES ===
+ int	SetOutputArch(char *Name);
 void	GenerateOutput(char *File);
 #if 0
 void	Output_AppendCode(tOutput_Function *Func, uint8_t Byte);
@@ -30,23 +40,63 @@ void	Output_AppendReloc32(tOutput_Function *Func, int32_t Addend, char *SymName)
 void	Output_Int_AddReloc(tOutput_Function *Func, int Bits, uint Offset, uint Addend, char *Name);
 #endif
 
+// === GLOBALS ===
+const tOutputFormat	caOutputFormats[] = {
+	{"X86", X86_GenerateProlouge, X86_GenerateFunction},
+	{"VM16CISC", VM16CISC_GenerateProlouge, VM16CISC_GenerateFunction}
+};
+#define NUM_OUTPUT_FORMATS	(sizeof(caOutputFormats)/sizeof(caOutputFormats[0]))
+
+const tOutputFormat	*gpOutputFormat = &caOutputFormats[0];
+
 // === CODE ===
+int SetOutputArch(char *Name)
+{
+	 int	i;
+	for( i = 0; i < NUM_OUTPUT_FORMATS; i++ )
+	{
+		if(strcmp(caOutputFormats[i].Name, Name) == 0) {
+			gpOutputFormat = &caOutputFormats[i];
+			return 0;
+		}
+	}
+	
+	fprintf(stderr, "Unknown output architecture '%s'\n", Name);
+	fprintf(stderr, "Valid architectures: ");
+	for( i = 0; i < NUM_OUTPUT_FORMATS; i++ )
+	{
+		if(i)	fprintf(stderr, ", ");
+		fprintf(stderr, "%s", caOutputFormats[i].Name);
+	}
+	fprintf(stderr, "\n");
+	
+	return -1;
+}
+
 void GenerateOutput(char *File)
 {
 	tFunction	*func;
 	FILE	*fp = stdout;
 	
-	X86_GenerateProlouge(fp);
+	if( File && (fp = fopen(File, "w")) == NULL )
+	{
+		fprintf(stderr, "ERROR: Unable to open '%s' for writing\n", File);
+		perror("GenerateOutput()");
+	}
+	
+	//CONCAT(OUTPUT_FORMAT, _GenerateProlouge)(fp);
+	gpOutputFormat->GenProlouge(fp);
 	
 	for(func = gpFunctions;
 		func;
 		func = func->Next
 		)
 	{
-		//printf("func->Name = '%s'\n", func->Name);
-		printf("\n");
-		printf("; Function '%s'\n", func->Name);
-		X86_GenerateFunction(fp, func);
+		if( func->Code == NULL )
+			continue;
+		
+		//CONCAT(OUTPUT_FORMAT,_GenerateFunction)(fp, func);
+		gpOutputFormat->GenFunction(fp, func);
 	}
 }
 

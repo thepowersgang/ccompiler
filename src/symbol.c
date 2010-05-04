@@ -15,6 +15,7 @@
 
 // === IMPORTS ===
 extern int	giLine;
+extern tType	*GetType(void);
 
 // === PROTOTYPES ===
 void	Symbol_EnterBlock(void);
@@ -28,12 +29,20 @@ void	Symbol_AddGlobalVariable(tType *Type, char *Name, uint64_t InitValue);
 void	Symbol_SetFunction(tFunction *Fcn);
 void	Symbol_SetFunctionCode(tFunction *Fcn, void *Block);
 void	Symbol_DumpTree(void);
+tType	*Symbol_ParseStruct(char *Name);
+tType	*Symbol_GetStruct(char *Name);
+tType	*Symbol_ParseUnion(char *Name);
+tType	*Symbol_GetUnion(char *Name);
+tType	*Symbol_ParseEnum(char *Name);
+tType	*Symbol_GetEnum(char *Name);
 
 // === GLOBALS ===
 tFunction	*gpFunctions = NULL;
 tFunction	*gpCurrentFunction = NULL;
 tCodeBlock	*gpCurrentBlock = NULL;
 tSymbol	*gpGlobalSymbols = NULL;
+tStruct	*gpStructures;
+tStruct	*gpUnions;
 
 // === CODE ===
 void Symbol_EnterBlock(void)
@@ -213,6 +222,7 @@ void *Symbol_GetFunction(tType *Return, char *Name)
 	ret->Name = Name;
 	ret->Arguments = NULL;
 	ret->Code = NULL;
+	ret->bVaArgs = 0;
 	
 	if(gpFunctions)
 		prev->Next = ret;
@@ -220,6 +230,11 @@ void *Symbol_GetFunction(tType *Return, char *Name)
 		gpFunctions = ret;
 	
 	return ret;
+}
+
+void Symbol_SetFunctionVariableArgs(tFunction *Func)
+{
+	Func->bVaArgs = 1;
 }
 
 void Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name)
@@ -297,3 +312,142 @@ void Symbol_DumpTree(void)
 	}
 	#endif
 }
+
+// --- Structures, Unions and Enums ---
+tType *Symbol_ParseStruct(char *Name)
+{
+	tType	*ret, *type;
+	tStruct	*str;
+	GetToken();	// Eat {
+	
+	if( Name ) {
+		tStruct	*ele;
+		for( ele = gpStructures; ele; ele = ele->Next )
+		{
+			if(strcmp(ele->Name, Name) == 0) {
+				SyntaxErrorF("Duplicated definition of '%s'", Name);
+				return NULL;
+			}
+		}
+	}
+	
+	str = malloc( sizeof(tStruct) );
+	str->Name = Name;
+	str->NumElements = 0;
+	str->Elements = NULL;
+	
+	while( LookAhead() == TOK_IDENT )
+	{
+		type = GetType();
+		
+		do {
+			if( GetToken() != TOK_IDENT ) {
+				SyntaxError2(giToken, TOK_IDENT);
+				return NULL;
+			}
+			str->NumElements ++;
+			str->Elements = realloc( str->Elements, str->NumElements*sizeof(*str->Elements) );
+			str->Elements[str->NumElements-1].Type = type;
+			str->Elements[str->NumElements-1].Name = strndup(gsTokenStart, giTokenLength);
+			printf("Element of struct '%s', %p %s\n", Name, type,
+				str->Elements[str->NumElements-1].Name);
+		} while(GetToken() == TOK_COMMA);
+		if(giToken != TOK_SEMICOLON)
+			SyntaxError2(giToken, TOK_SEMICOLON);
+	}
+	
+	GetToken();	// Eat }
+	if( giToken != TOK_BRACE_CLOSE )
+		SyntaxError2(giToken, TOK_BRACE_CLOSE);
+	
+	ret = calloc(1, sizeof(tType));
+	ret->Type = 2;
+	ret->StructUnion = str;
+	
+	return ret;
+}
+
+tType *Symbol_GetStruct(char *Name)
+{
+	tStruct	*ele;
+	tType	*ret;
+	for( ele = gpStructures; ele; ele = ele->Next )
+	{
+		if(strcmp(ele->Name, Name) == 0) {
+			ret = calloc(1, sizeof(tType));
+			ret->Type = 2;
+			ret->StructUnion = ele;
+			return ret;
+		}
+	}
+	return NULL;
+}
+
+tType *Symbol_ParseUnion(char *Name)
+{
+	tType	*ret, *type;
+	tStruct	*un;
+	GetToken();	// Eat {
+	
+	if( Name ) {
+		tStruct	*ele;
+		for( ele = gpUnions; ele; ele = ele->Next )
+		{
+			if(strcmp(ele->Name, Name) == 0) {
+				SyntaxErrorF("Duplicated definition of union '%s'", Name);
+				return NULL;
+			}
+		}
+	}
+	
+	un = malloc( sizeof(tStruct) );
+	un->Name = Name;
+	un->NumElements = 0;
+	un->Elements = NULL;
+	
+	while( LookAhead() == TOK_IDENT )
+	{
+		type = GetType();
+		
+		do {
+			if( GetToken() != TOK_IDENT ) {
+				SyntaxError2(giToken, TOK_IDENT);
+				return NULL;
+			}
+			un->NumElements ++;
+			un->Elements = realloc( un->Elements, un->NumElements*sizeof(*un->Elements) );
+			un->Elements[un->NumElements-1].Type = type;
+			un->Elements[un->NumElements-1].Name = strndup(gsTokenStart, giTokenLength);
+			printf("Element of union '%s', %p %s\n", Name, type,
+				un->Elements[un->NumElements-1].Name);
+		} while(GetToken() == TOK_COMMA);
+		if(giToken != TOK_SEMICOLON)
+			SyntaxError2(giToken, TOK_SEMICOLON);
+	}
+	
+	GetToken();	// Eat }
+	if( giToken != TOK_BRACE_CLOSE )
+		SyntaxError2(giToken, TOK_BRACE_CLOSE);
+	
+	ret = calloc(1, sizeof(tType));
+	ret->Type = 3;
+	ret->StructUnion = un;
+	
+	return ret;
+}
+
+tType *Symbol_GetUnion(char *Name)
+{
+	return NULL;
+}
+
+tType *Symbol_ParseEnum(char *Name)
+{
+	return NULL;
+}
+
+tType *Symbol_GetEnum(char *Name)
+{
+	return NULL;
+}
+

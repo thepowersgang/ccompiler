@@ -267,6 +267,14 @@ doPPComment:
 			RET_TOK( TOK_SCOPE );
 		}
 		RET_TOK( TOK_COLON );
+	
+	case '.':
+		if( *gsNextChar == '.' && gsNextChar[1] == '.' )
+		{
+			gsNextChar += 2;
+				RET_TOK( TOK_VAARG );
+		}
+		RET_TOK( TOK_DOT );
 
 	// Namespace Separator
 	case '\\':	RET_TOK( TOK_SLASH );

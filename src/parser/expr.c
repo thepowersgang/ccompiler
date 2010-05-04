@@ -16,15 +16,12 @@
 #include <ast.h>
 
 // === MACROS ===
-#define CMPTOK(str)	(strncmp((str),gsTokenStart,giTokenLength)==0)
+#define CMPTOK(str)	(strlen((str))==giTokenLength&&strncmp((str),gsTokenStart,giTokenLength)==0)
 
 // === IMPORTS ===
 extern int	giLine;
 extern int	giStatement;
-extern int	giToken;
-extern int	giTokenLength;
 extern int	giInPHPMode;
-extern char	*gsTokenStart;
 extern char	*gsNextChar;
 extern int	giCurrentNamespace;
 extern int	giCurrentClass;
@@ -81,55 +78,145 @@ tType *GetType()
 	tType	*ret;
 	 int	tok;
 	 int	bSigned = 1;
-	 int	bConst = 0;
+	 int	bConst = 0, bIntegral = 0;
 	 int	linkage = 0;
-	 int	size = 32;
+	 int	size = -1;
 	 int	depth = 0;
 	
-	for(;;)
-	{
+	tok = GetToken();
+	#if 0
+	if(tok == TOK_IDENT) {
+		CMPTOK("struct");
 		tok = GetToken();
-		if(tok == TOK_ASTERISK) {
-			depth ++;
-			continue;
-		}
-		if(tok != TOK_IDENT)	SyntaxError2(tok, TOK_IDENT);
-		
-		// Signed?
-		if( CMPTOK("signed") ) {
-			bSigned = 1;
-			continue;
-		}
-		else if( CMPTOK("unsigned") ) {
-			bSigned = 0;
-			continue;
-		}
-		
-		// Constant?
-		if( CMPTOK("const") ) {
-			bConst = 1;
-			continue;
-		}
-		
-		// Static/Extern?
+	}
+	#endif
+	
+	
+	// TODO: Improve by using a pseudo "order of operations"
+	
+	// - Linkage
+	if(tok == TOK_IDENT)
+	{
 		if( CMPTOK("static") ) {
 			linkage = 1;
-			continue;
+			tok = GetToken();
 		}
 		else if( CMPTOK("extern") ) {
 			linkage = 2;
-			continue;
+			tok = GetToken();
+		}
+	}
+	
+	// - Const/Volatile
+	if(tok == TOK_IDENT)
+	{
+		// Constant?
+		if( CMPTOK("const") ) {
+			bConst = 1;
+			tok = GetToken();
+		}
+	}
+	
+	// - Sign and Composites
+	if(tok == TOK_IDENT)
+	{
+		if( CMPTOK("signed") ) {
+			bSigned = 1;
+			bIntegral = 1;
+			tok = GetToken();
+		}
+		else if( CMPTOK("unsigned") ) {
+			bSigned = 0;
+			bIntegral = 1;
+			tok = GetToken();
+		}
+		else if( CMPTOK("struct") ) {
+			char	*name = NULL;
+			tok = GetToken();
+			// Name
+			if(tok == TOK_IDENT) {
+				name = strndup(gsTokenStart, giTokenLength);
+				tok = GetToken();
+			}
+			// Get Definition
+			if(tok == TOK_BRACE_OPEN) {
+				PutBack();	// Symbol_ParseStruct wants the opeing brace
+				ret = Symbol_ParseStruct(name);
+				tok = GetToken();
+			}
+			// Unnamed and undefined
+			else if(!name) {
+				SyntaxError("Expected struct name");
+				return NULL;
+			}
+			// Named, and undefined
+			else
+				ret = Symbol_GetStruct(name);
+			goto ptrAndAccess;
+		}
+		else if( CMPTOK("union") ) {
+			char	*name = NULL;
+			tok = GetToken();
+			// Get Name
+			if(tok == TOK_IDENT) {
+				name = strndup(gsTokenStart, giTokenLength);
+				tok = GetToken();
+			}
+			// Get Definition
+			if(tok == TOK_BRACE_OPEN) {
+				PutBack();	// Symbol_ParseStruct wants the opeing brace
+				ret = Symbol_ParseUnion(name);
+				tok = GetToken();
+			}
+			// Unnamed and undefined
+			else if(!name) {
+				SyntaxError("Expected union name");
+				return NULL;
+			}
+			// Named and undefined
+			else
+				ret = Symbol_GetUnion(name);
+			goto ptrAndAccess;
+		}
+		else if( CMPTOK("enum") ) {
+			char	*name = NULL;
+			tok = GetToken();
+			fprintf(stderr, "DEBUG: TODO - enums\n");
+			if(tok == TOK_IDENT) {
+				name = strndup(gsTokenStart, giTokenLength);
+				tok = GetToken();
+			}
+			if(tok == TOK_BRACE_OPEN) {
+				PutBack();	// Symbol_ParseStruct wants the opeing brace
+				ret = Symbol_ParseEnum(name);
+				tok = GetToken();
+			}
+			else if(!name) {
+				SyntaxError("Expected union name");
+				return NULL;
+			}
+			else
+				ret = Symbol_GetEnum(name);
+			goto ptrAndAccess;
+		}
+	
+		if( CMPTOK("char") ) {
+			size = 8;	// 8-bit char
+		}
+		else if( CMPTOK("short") ) {
+			size = 16;	// 16-bit short
+		}
+		else if( CMPTOK("long") ) {
+			size = 32;	// 32-bit int
+		}
+		else if( CMPTOK("int") ) {
+			size = 32;	// 32-bit int
+		}
+		else if( CMPTOK("void") ) {
+			size = 0;
 		}
 		
-		if( CMPTOK("char") )
-			size = 8;	// 8-bit char
-		else if( CMPTOK("short") )
-			size = 16;	// 16-bit short
-		else if( CMPTOK("int") )
-			size = 32;	// 32-bit int
-		else if( CMPTOK("void") )
-			size = 0;
-		else {
+		if( size == -1 ) {
 			char	*tmp = strndup(gsTokenStart, giTokenLength);
 			ret = Symbol_ResolveTypedef(tmp, depth);
 			if(!ret) {
@@ -138,12 +225,35 @@ tType *GetType()
 				return NULL;
 			}
 			free(tmp);
-			return ret;
+		}
+		else {
+			ret = Symbol_CreateIntegralType(bSigned, bConst, linkage, size, depth);
 		}
 		
-		ret = Symbol_CreateIntegralType(bSigned, bConst, linkage, size, depth);
-		return ret;
+		tok = GetToken();	
 	}
+	
+ptrAndAccess:
+	// Pointer
+	while(tok == TOK_ASTERISK) {
+		depth ++;
+		tok = GetToken();
+	}
+	
+	// - Const/Volatile
+	if(tok == TOK_IDENT)
+	{
+		// Constant?
+		if( CMPTOK("const") ) {
+			bConst = 1;
+			tok = GetToken();
+		}
+	}
+	PutBack();
+	
+	ret->bConst = bConst;
+	ret->PtrDepth = depth;
+	return ret;
 }
 
 /**
@@ -159,7 +269,13 @@ void GetDefinition(void)
  	tAST_Node	*node;
 	
 	type = GetType();
-	SyntaxAssert(GetToken(), TOK_IDENT);
+	tok = GetToken();
+	if( tok == TOK_SEMICOLON ) {
+		//if(type->Type != 2 && type->Type != 3)
+		//	WarningF("Definition of a type with no variable");
+		return;
+	}
+	SyntaxAssert(tok, TOK_IDENT);
 	name = strndup(gsTokenStart, giTokenLength);
 	DEBUG1("Creating '%s'\n", name);
 	
@@ -209,6 +325,15 @@ void GetDefinition(void)
 			if( giToken != TOK_COMMA )
 				SyntaxError2(giToken, TOK_COMMA);
 			i ++;
+		}
+		
+		if(LookAhead() == TOK_VAARG) {
+			GetToken();
+			DEBUG1("type = VA_ARG\n");
+			Symbol_SetFunctionVariableArgs(ptr);
+			GetToken();
+			if( giToken != TOK_PAREN_CLOSE )
+				SyntaxError2(giToken, TOK_PAREN_CLOSE);
 		}
 		switch( (tok = LookAhead()) )
 		{
@@ -314,7 +439,8 @@ tAST_Node *DoStatement()
 #endif
 	default:
 		ret = DoExpr0();
-			SyntaxAssert( GetToken(), TOK_SEMICOLON );
+		SyntaxAssert( GetToken(), TOK_SEMICOLON );
+		break;
 	}
 	return ret;
 }
@@ -639,6 +765,11 @@ tAST_Node *DoExpr9()
 		ret = AST_NewUniOp(NODETYPE_BWNOT, DoParen());
 		break;
 
+	case TOK_AMP:
+		GetToken();
+		ret = AST_NewUniOp(NODETYPE_ADDROF, DoParen());
+		break;
+
 	case TOK_RSVDWORD:
 		GetToken();
 		SyntaxError("Unexpected reserved word");
@@ -715,6 +846,7 @@ tAST_Node *GetString()
 			case 'n':	buf[j] = '\n';	break;
 			case 'r':	buf[j] = '\r';	break;
 			case 't':	buf[j] = '\t';	break;
+			case 'b':	buf[j] = '\b';	break;
 			}
 		}
 		else
@@ -799,6 +931,8 @@ tAST_Node *GetIdent()
 {
 	tSymbol	*sym = NULL;
 	char	*str;
+	tAST_Node	*node;
+	
 	DEBUG3(" GetIdent: ()\n");
 	GetToken();
 
@@ -856,11 +990,23 @@ tAST_Node *GetIdent()
 
 		return ret;
 	}
-
+	
+	//! \todo Generalise the function handling into this
 	if( (sym = Symbol_GetLocalVariable(str)) != NULL )
-		return AST_NewLocalVar( sym );
+		node = AST_NewLocalVar( sym );
 	else
-		return AST_NewSymbol( Symbol_ResolveSymbol(str), str );
+		node = AST_NewSymbol( Symbol_ResolveSymbol(str), str );
+	
+	if( LookAhead() == TOK_SQUARE_OPEN ) {
+		GetToken();
+		node = AST_NewArrayIndex( node, DoExpr0() );
+		GetToken();
+		if(giToken != TOK_SQUARE_CLOSE)
+			SyntaxError2(giToken, TOK_SQUARE_CLOSE);
+		return node;
+	}
+	else
+		return node;
 }
 
 /**

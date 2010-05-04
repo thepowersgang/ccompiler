@@ -7,7 +7,7 @@ MKENUM = ../MakeEnum
 OBJ  = main.o ast.o data.o helpers.o symbol.o
 OBJ += parser/token.o parser/expr.o
 OBJ += opt/common.o opt/pass1.o opt/pass2.o
-OBJ += output/common.o output/arch/x86.o
+OBJ += output/common.o output/arch/x86.o output/arch/vm16cisc.o
 DEPFILES  = $(OBJ:%.o=%.d)
 BIN = ../cc
 

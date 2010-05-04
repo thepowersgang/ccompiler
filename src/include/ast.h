@@ -38,6 +38,7 @@ enum eAST_NodeTypes
 	NODETYPE_NEGATE,
 	NODETYPE_BWNOT,
 	NODETYPE_DEREF,
+	NODETYPE_ADDROF,
 
 	NODETYPE_POSTINC,
 	NODETYPE_POSTDEC,
@@ -48,6 +49,7 @@ enum eAST_NodeTypes
 	NODETYPE_CAT_BINARYOPS = 0x500,
 	NODETYPE_ASSIGNOP,	//!< Special
 	NODETYPE_ASSIGN,	//!< Special
+	NODETYPE_INDEX,	//!< Special
 
 	NODETYPE_ADD,
 	NODETYPE_SUBTRACT,
@@ -168,5 +170,6 @@ extern tAST_Node	*AST_NewSymbol(tSymbol *Sym, char *Name);
 extern tAST_Node	*AST_NewLocalVar(tSymbol *Sym);
 extern tAST_Node	*AST_NewString(void *Data, size_t Length);
 extern tAST_Node	*AST_NewInteger(uint64_t Value);
+extern tAST_Node	*AST_NewArrayIndex(tAST_Node *Var, tAST_Node *Index);
 
 #endif

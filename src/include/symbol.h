@@ -15,6 +15,7 @@ typedef struct sTypedef	tTypedef;
 typedef struct sSymbol	tSymbol;
 typedef struct sCodeBlock	tCodeBlock;
 typedef struct sFunction	tFunction;
+typedef struct sStruct	tStruct;
 
 #include <ast.h>
 
@@ -46,6 +47,7 @@ struct sType
 			 int	bSigned;
 			 int	Bits;
 		}	Integer;
+		tStruct	*StructUnion;
 	};
 	 int	Count;	// Defaults to 1 (array size)
 	size_t	Size;	// Size in words (pointers)
@@ -85,9 +87,22 @@ struct sFunction
 	tType	*Return;
 	char	*Name;
 
-	tAST_Node	*Code;	// Actually a tAST_Node
+	 int	bVaArgs;
+
+	tAST_Node	*Code;
 	tSymbol	*Arguments;
 	 int	CurArgSize;
+};
+
+struct sStruct
+{
+	struct sStruct	*Next;
+	char	*Name;
+	 int	NumElements;
+	struct {
+		tType	*Type;
+		char	*Name;
+	}	*Elements;
 };
 
 // === GLOBALS ===
@@ -97,13 +112,22 @@ extern tSymbol	*gpGlobalSymbols;
 // === FUNCTIONS ===
 extern void	Symbol_EnterBlock(void);
 extern void	Symbol_LeaveBlock(void);
+
 extern tType	*Symbol_ResolveTypedef(char *Name, int Depth);
 extern tType	*Symbol_CreateIntegralType(int bSigned, int bConst, int Linkage, int Size, int Depth);
+extern tType	*Symbol_ParseStruct(char *Name);
+extern tType	*Symbol_GetStruct(char *Name);
+extern tType	*Symbol_ParseUnion(char *Name);
+extern tType	*Symbol_GetUnion(char *Name);
+extern tType	*Symbol_ParseEnum(char *Name);
+extern tType	*Symbol_GetEnum(char *Name);
+
 extern tSymbol	*Symbol_GetLocalVariable(char *Name);
 extern tSymbol	*Symbol_ResolveSymbol(char *Name);
 extern int	Symbol_GetSymClass(tSymbol *Symbol);
 extern void	Symbol_AddGlobalVariable(tType *Type, char *Name, uint64_t InitValue);
 extern void	*Symbol_GetFunction(tType *Return, char *Name);
+extern void	Symbol_SetFunctionVariableArgs(tFunction *Func);
 extern void	Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name);
 extern void	Symbol_SetFunction(tFunction *Fcn);
 extern void	Symbol_SetFunctionCode(tFunction *Fcn, void *Block);

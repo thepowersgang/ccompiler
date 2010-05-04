@@ -14,6 +14,7 @@ extern void	InitialiseAST(void);
 extern void	InitialiseData(void);
 extern void Symbol_DumpTree(void);
 extern void	Optimiser_ProcessTree(void);
+extern int	SetOutputArch(char *Name);
 extern void	GenerateOutput(char *File);
 
 // Parser Variables
@@ -25,9 +26,11 @@ char	*gsTokenStart = NULL;
  int	giStatement = 1;
  int	giInputLength = 0;
 char	*gsCurFile = NULL;
-char	*gsInputFile = NULL;
-char	*gsOutputFile = "out.phc";
 char	*gsInputData = NULL;
+
+char	*gsInputFile = NULL;
+char	*gsOutputFile = "out.asm";
+char	*gsOutputArch;
 
 void ParseCommandLine(int argc, char *argv[]);
 void PrintSyntax(char *exename);
@@ -42,6 +45,12 @@ int main(int argc, char *argv[])
 	 int	tok;
 
 	ParseCommandLine(argc, argv);
+
+	if( gsOutputArch )
+	{
+		if( SetOutputArch(gsOutputArch) < 0 )
+			return -1;
+	}
 
 	InitialiseData();
 
@@ -101,6 +110,9 @@ void ParseCommandLine(int argc, char *argv[])
 		{
 			switch(argv[i][1])
 			{
+			case 'a':
+				gsOutputArch = argv[++i];
+				break;
 			case 'o':
 				gsOutputFile = argv[++i];
 				break;

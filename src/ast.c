@@ -25,6 +25,7 @@ tAST_Node	*AST_NewSymbol(tSymbol *Sym, char *Name);
 tAST_Node	*AST_NewLocalVar(tSymbol *Sym);
 tAST_Node	*AST_NewString(void *Data, size_t Length);
 tAST_Node	*AST_NewInteger(uint64_t Value);
+tAST_Node	*AST_NewArrayIndex(tAST_Node *Var, tAST_Node *Index);
 void	AST_DeleteNode(tAST_Node *Node);
 
 // === CODE ===
@@ -282,6 +283,14 @@ tAST_Node *AST_NewInteger(uint64_t Value)
 {
 	tAST_Node	*ret = AST_NewNode(NODETYPE_INTEGER);
 	ret->Integer.Value = Value;
+	return ret;
+}
+
+tAST_Node *AST_NewArrayIndex(tAST_Node *Var, tAST_Node *Index)
+{
+	tAST_Node	*ret = AST_NewNode(NODETYPE_INDEX);
+	ret->BinOp.Left = Var;
+	ret->BinOp.Right = Index;
 	return ret;
 }
 

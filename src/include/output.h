@@ -12,6 +12,14 @@
 
 #include <stdint.h>
 
+// === Output Format Type
+typedef struct sOutputFormat
+{
+	char	*Name;
+	 int	(*GenProlouge)(FILE *OutFile);
+	 int	(*GenFunction)(FILE *OutFile, tFunction *Func);
+}	tOutputFormat;
+
 #if 0
 typedef struct sElf_x86_Reloc
 {

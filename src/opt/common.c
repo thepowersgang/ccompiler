@@ -55,6 +55,8 @@ void Optimiser_DoPass(tOptimiseCallback *Callback)
 		fcn;
 		fcn = fcn->Next)
 	{
+		if( fcn->Code == NULL )
+			continue;
 		DEBUG1("Optimising %s()\n", fcn->Name);
 		tmp = Optimiser_ProcessNode(Callback, fcn->Code);
 		if(tmp != fcn->Code) {
