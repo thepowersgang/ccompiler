@@ -50,6 +50,7 @@ enum eAST_NodeTypes
 	NODETYPE_ASSIGNOP,	//!< Special
 	NODETYPE_ASSIGN,	//!< Special
 	NODETYPE_INDEX,	//!< Special
+	NODETYPE_MEMBER,	//!< Special
 
 	NODETYPE_ADD,
 	NODETYPE_SUBTRACT,

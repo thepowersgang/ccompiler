@@ -61,6 +61,7 @@ tAST_Node	*DoExpr6(void);	// Arithmatic
 tAST_Node	*DoExpr7(void);	// Mult/Div
 tAST_Node	*DoExpr8(void);	// Right Unaries
 tAST_Node	*DoExpr9(void);	// Left Unaries
+tAST_Node	*DoMember(void);	// Member dereference
 tAST_Node	*DoParen(void);	// 2nd Last - Parens
 tAST_Node	*DoValue(void);	// FINAL - Values
 tAST_Node	*GetString(void);
@@ -78,7 +79,7 @@ tType *GetType()
 	tType	*ret;
 	 int	tok;
 	 int	bSigned = 1;
-	 int	bConst = 0, bIntegral = 0;
+	 int	bConst = 0;
 	 int	linkage = 0;
 	 int	size = -1;
 	 int	depth = 0;
@@ -120,17 +121,7 @@ tType *GetType()
 	// - Sign and Composites
 	if(tok == TOK_IDENT)
 	{
-		if( CMPTOK("signed") ) {
-			bSigned = 1;
-			bIntegral = 1;
-			tok = GetToken();
-		}
-		else if( CMPTOK("unsigned") ) {
-			bSigned = 0;
-			bIntegral = 1;
-			tok = GetToken();
-		}
-		else if( CMPTOK("struct") ) {
+		if( CMPTOK("struct") ) {
 			char	*name = NULL;
 			tok = GetToken();
 			// Name
@@ -204,6 +195,15 @@ tType *GetType()
 			goto ptrAndAccess;
 		}
 	
+		if( CMPTOK("signed") ) {
+			bSigned = 1;
+			tok = GetToken();
+		}
+		else if( CMPTOK("unsigned") ) {
+			bSigned = 0;
+			tok = GetToken();
+		}
+
 		if( CMPTOK("char") ) {
 			size = 8;	// 8-bit char
 		}
@@ -754,24 +754,24 @@ tAST_Node *DoExpr9()
 	{
 	case TOK_INC:
 		GetToken();
-		ret = AST_NewUniOp(NODETYPE_PREINC, DoParen());
+		ret = AST_NewUniOp(NODETYPE_PREINC, DoMember());
 		break;
 	case TOK_DEC:
 		GetToken();
-		ret = AST_NewUniOp(NODETYPE_PREDEC, DoParen());
+		ret = AST_NewUniOp(NODETYPE_PREDEC, DoMember());
 		break;
 	case TOK_MINUS:
 		GetToken();
-		ret = AST_NewUniOp(NODETYPE_NEGATE, DoParen());
+		ret = AST_NewUniOp(NODETYPE_NEGATE, DoMember());
 		break;
 	case TOK_NOT:
 		GetToken();
-		ret = AST_NewUniOp(NODETYPE_BWNOT, DoParen());
+		ret = AST_NewUniOp(NODETYPE_BWNOT, DoMember());
 		break;
 
 	case TOK_AMP:
 		GetToken();
-		ret = AST_NewUniOp(NODETYPE_ADDROF, DoParen());
+		ret = AST_NewUniOp(NODETYPE_ADDROF, DoMember());
 		break;
 
 	case TOK_RSVDWORD:
@@ -779,8 +779,35 @@ tAST_Node *DoExpr9()
 		SyntaxError("Unexpected reserved word");
 		return NULL;
 
+	case TOK_ASTERISK:
+		ret = AST_NewUniOp(NODETYPE_DEREF, DoMember());
+		break;
+
 	default:
-		ret = DoParen();
+		ret = DoMember();
+		break;
+	}
+	return ret;
+}
+
+// ---
+// Member dereferences (. and ->)
+// TODO: Fix
+// ---
+tAST_Node *DoMember()
+{
+	tAST_Node	*ret = DoParen();
+	switch(LookAhead())
+	{
+	case TOK_DOT:	// .
+		GetToken();
+		ret = AST_NewBinOp(NODETYPE_MEMBER, ret, DoMember());
+		break;
+	case TOK_MEMBER:	// ->
+		GetToken();
+		ret = AST_NewBinOp(NODETYPE_MEMBER, AST_NewUniOp(NODETYPE_DEREF, ret), DoMember());
+		break;
+	default:
 		break;
 	}
 	return ret;

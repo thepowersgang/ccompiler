@@ -47,7 +47,7 @@ void AST_DumpTree(tAST_Node *Node, int Depth)
 	
 	// --- Leaves ---
 	case NODETYPE_INTEGER:
-		printf("Constant - 0x%llx\n", Node->Integer.Value);
+		printf("Constant - 0x%lx\n", Node->Integer.Value);
 		break;
 	case NODETYPE_SYMBOL:
 		printf("Symbol - '%s' %p\n", Node->Symbol.Name, Node->Symbol.Sym);

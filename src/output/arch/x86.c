@@ -46,7 +46,7 @@ int X86_GenerateProlouge(FILE *OutFile)
 			fprintf(OutFile, "[global %s]\n", sym->Name);
 		fprintf(
 			OutFile,
-			"%s:\ttimes %i dd 0\n",
+			"%s:\ttimes %li dd 0\n",
 			sym->Name,
 			sym->Type->Size
 			);
@@ -81,7 +81,7 @@ int X86_GenerateFunction(FILE *OutFile, tFunction *Func)
 	fprintf(OutFile, "%s:\n", Func->Name);
 	fprintf(OutFile, "\tpush ebp\n");
 	fprintf(OutFile, "\tmov ebp, esp\n");
-	// F*** keeping SP unchanged throughout the function
+	// CBF keeping SP unchanged throughout the function
 	
 	// --- Process function block
 	X86_ProcessBlock(OutFile, 0, Func->Code);

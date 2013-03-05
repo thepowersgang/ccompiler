@@ -44,7 +44,7 @@ int VM16CISC_GenerateProlouge(FILE *OutFile)
 			fprintf(OutFile, "[global %s]\n", sym->Name);
 		fprintf(
 			OutFile,
-			"%s:\ttimes %i d64 0\n",
+			"%s:\ttimes %li d64 0\n",
 			sym->Name,
 			sym->Type->Size
 			);
@@ -152,7 +152,7 @@ void VM16CISC_DoAction(FILE *OutFile, int CurBPOfs, tAST_Node *Node, uint16_t Re
 	switch( Node->Type )
 	{
 	case NODETYPE_INTEGER:
-		fprintf(OutFile, "\tMOV R1, 0x%llx\n", Node->Integer.Value);
+		fprintf(OutFile, "\tMOV R1, 0x%lx\n", Node->Integer.Value);
 		break;
 	
 	case NODETYPE_STRING:

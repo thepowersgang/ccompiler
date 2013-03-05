@@ -8,7 +8,8 @@ OBJ  = main.o ast.o data.o helpers.o symbol.o
 OBJ += parser/token.o parser/expr.o
 OBJ += opt/common.o opt/pass1.o opt/pass2.o
 OBJ += output/common.o output/arch/x86.o output/arch/vm16cisc.o
-DEPFILES  = $(OBJ:%.o=%.d)
+OBJ := $(OBJ:%=obj/%)
+DEPFILES  = $(OBJ:%=%.d)
 BIN = ../cc
 
 CPPFLAGS = -I./include
@@ -25,9 +26,9 @@ clean:
 $(BIN): $(OBJ)
 	$(CC) $(LDFLAGS) -o $(BIN) $(OBJ)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
-	@$(CC) -M $(CPPFLAGS) -MT $*.o -o $*.d $<
+obj/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@ -MMD -MF $@.d
 
 %.enum.h: %.enum
 	$(MKENUM) $< > $@
