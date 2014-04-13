@@ -1,4 +1,4 @@
-# PHPOS Compiler Makefile
+# Acess C Compiler Makefile
 
 RM = rm -f
 CC = gcc
@@ -13,7 +13,7 @@ DEPFILES  = $(OBJ:%=%.d)
 BIN = ../cc
 
 CPPFLAGS = -I./include
-CFLAGS	= -Wall -Werror $(CPPFLAGS) -g
+CFLAGS	= -Wall -Werror $(CPPFLAGS) -g -std=gnu99
 LDFLAGS = -g
 
 .PHONY:	all
@@ -24,11 +24,13 @@ clean:
 	$(RM) $(BIN) $(OBJ) $(DEPFILES)
 
 $(BIN): $(OBJ)
-	$(CC) $(LDFLAGS) -o $(BIN) $(OBJ)
+	@echo [LINK] $@
+	@$(CC) $(LDFLAGS) -o $(BIN) $(OBJ)
 
 obj/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@ -MMD -MF $@.d
+	@echo [CC] -o $@
+	@$(CC) $(CFLAGS) -c $< -o $@ -MMD -MF $@.d
 
 %.enum.h: %.enum
 	$(MKENUM) $< > $@

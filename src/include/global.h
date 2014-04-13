@@ -12,6 +12,8 @@ GLOBAL.H
 # define DEBUG_S(...)
 #endif
 
+#define ACC_ERRPTR	((void*)-1)
+
 // ---
 #define STR(x...) #x
 #define EXPAND_STR(x...) STR(x)
@@ -20,6 +22,7 @@ GLOBAL.H
 #include <stdlib.h>
 #include <stdio.h>
 #include <parser.h>
+
 
 extern int	GetVariableId();
 extern int	GetCodeOffset();
@@ -65,5 +68,6 @@ extern char	*gsTokenStart;
 # define	DEBUG3(v...)
 #endif
 
+#define TODO(str, v...)	do{ fprintf(stderr, "%s:%i - TODO: "str"\n", __FILE__,__LINE__,##v); exit(1); }while(0)
 
 #endif

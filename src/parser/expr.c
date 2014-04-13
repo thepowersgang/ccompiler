@@ -14,489 +14,299 @@
 #include <memory.h>
 #include <symbol.h>
 #include <ast.h>
+#include <stdbool.h>
+#include <assert.h>
 
 // === MACROS ===
 #define CMPTOK(str)	(strlen((str))==giTokenLength&&strncmp((str),gsTokenStart,giTokenLength)==0)
 
 // === IMPORTS ===
-extern int	giLine;
-extern int	giStatement;
-extern int	giInPHPMode;
-extern char	*gsNextChar;
-extern int	giCurrentNamespace;
-extern int	giCurrentClass;
-extern int	giCurrentFunction;
-extern char	*gsCurFile;
-
-extern int	GetNamespaceFromString(int stringId);
-extern int	GetClassFromString(int namespace, int stringId);
-extern int	GetFunctionFromString(int namespace, int class, int stringId);
-extern int	GetConstFromString(int namespace, int class, int stringId);
-extern void SetNamespace(char *name);
-extern void RestoreNamespace();
-extern void SetClass(char *name);
-extern void RestoreClass();
-extern void SetFunction(char *name);
-extern void SetFunctionArgs(int argc, int argt);
-extern void RestoreFunction();
-extern void	CreateOutput();
 extern tAST_Node	*Optimiser_StaticOpt(tAST_Node *Node);
 
 // === Prototypes ===
-tType	*GetType();
-tAST_Node	*DoCodeBlock(void);
-tAST_Node	*DoStatement(void);
-tAST_Node	*DoIf(void);
-tAST_Node	*DoWhile(void);
-tAST_Node	*DoFor(void);
-tAST_Node	*DoReturn(void);
+void	Parse_CodeRoot(tParser *Parser);
+tType	*Parse_GetType(tParser *Parser);
+ int	Parse_DoDefinition(tParser *Parser, tType *Type);
+tAST_Node	*Parse_DoTopIdent(tParser *Parser, bool NoCode);
+tAST_Node	*DoCodeBlock(tParser *Parser);
+tAST_Node	*DoStatement(tParser *Parser);
+tAST_Node	*DoIf(tParser *Parser);
+tAST_Node	*DoWhile(tParser *Parser);
+tAST_Node	*DoFor(tParser *Parser);
+tAST_Node	*DoReturn(tParser *Parser);
 
-tAST_Node	*DoExpr0(void);	// Assignment
-tAST_Node	*DoExpr1(void);	// Ternary
-tAST_Node	*DoExpr2(void);	// Boolean
-tAST_Node	*DoExpr3(void);	// Bitwise
-tAST_Node	*DoExpr4(void);	// Comparison
-tAST_Node	*DoExpr5(void);	// Shifts
-tAST_Node	*DoExpr6(void);	// Arithmatic
-tAST_Node	*DoExpr7(void);	// Mult/Div
-tAST_Node	*DoExpr8(void);	// Right Unaries
-tAST_Node	*DoExpr9(void);	// Left Unaries
-tAST_Node	*DoMember(void);	// Member dereference
-tAST_Node	*DoParen(void);	// 2nd Last - Parens
-tAST_Node	*DoValue(void);	// FINAL - Values
-tAST_Node	*GetString(void);
-tAST_Node	*GetCharConst(void);
-tAST_Node	*GetIdent(void);
-tAST_Node	*GetNumeric(void);
+tAST_Node	*DoExpr0(tParser *Parser);	// Assignment
+tAST_Node	*DoExpr1(tParser *Parser);	// Ternary
+tAST_Node	*DoExpr2(tParser *Parser);	// Boolean
+tAST_Node	*DoExpr3(tParser *Parser);	// Bitwise
+tAST_Node	*DoExpr4(tParser *Parser);	// Comparison
+tAST_Node	*DoExpr5(tParser *Parser);	// Shifts
+tAST_Node	*DoExpr6(tParser *Parser);	// Arithmatic
+tAST_Node	*DoExpr7(tParser *Parser);	// Mult/Div
+tAST_Node	*DoExpr8(tParser *Parser);	// Right Unaries
+tAST_Node	*DoExpr9(tParser *Parser);	// Left Unaries
+tAST_Node	*DoMember(tParser *Parser);	// Member dereference
+tAST_Node	*DoParen(tParser *Parser);	// 2nd Last - Parens
+tAST_Node	*DoValue(tParser *Parser);	// FINAL - Values
+tAST_Node	*GetString(tParser *Parser);
+tAST_Node	*GetCharConst(tParser *Parser);
+tAST_Node	*GetIdent(tParser *Parser);
+tAST_Node	*GetNumeric(tParser *Parser);
  int	GetReservedWord(void);
+
+void	SyntaxError(tParser *Parser, const char *reason, ...);
+void	SyntaxAssert(tParser *Parser, int tok, int expected);
+//void	FatalError(const char *reason, ...);
+
 
 // === CODE ===
 /**
- * \brief Parses a type definition
+ * \brief Handle the root of the parse tree
  */
-tType *GetType()
+void Parse_CodeRoot(tParser *Parser)
 {
-	tType	*ret;
-	 int	tok;
-	 int	bSigned = 1;
-	 int	bConst = 0;
-	 int	linkage = 0;
-	 int	size = -1;
-	 int	depth = 0;
-	
-	tok = GetToken();
-	#if 0
-	if(tok == TOK_IDENT) {
-		CMPTOK("struct");
-		tok = GetToken();
-	}
-	#endif
-	
-	
-	// TODO: Improve by using a pseudo "order of operations"
-	
-	// - Linkage
-	if(tok == TOK_IDENT)
+	while( LookAhead(Parser) != TOK_NULL )
 	{
-		if( CMPTOK("static") ) {
-			linkage = 1;
-			tok = GetToken();
-		}
-		else if( CMPTOK("extern") ) {
-			linkage = 2;
-			tok = GetToken();
-		}
-	}
-	
-	// - Const/Volatile
-	if(tok == TOK_IDENT)
-	{
-		// Constant?
-		if( CMPTOK("const") ) {
-			bConst = 1;
-			tok = GetToken();
-		}
-	}
-	
-	// - Sign and Composites
-	if(tok == TOK_IDENT)
-	{
-		if( CMPTOK("struct") ) {
-			char	*name = NULL;
-			tok = GetToken();
-			// Name
-			if(tok == TOK_IDENT) {
-				name = strndup(gsTokenStart, giTokenLength);
-				tok = GetToken();
-			}
-			// Get Definition
-			if(tok == TOK_BRACE_OPEN) {
-				PutBack();	// Symbol_ParseStruct wants the opeing brace
-				ret = Symbol_ParseStruct(name);
-				tok = GetToken();
-			}
-			// Unnamed and undefined
-			else if(!name) {
-				SyntaxError("Expected struct name");
-				return NULL;
-			}
-			// Named, and undefined
-			else
-				ret = Symbol_GetStruct(name);
-			goto ptrAndAccess;
-		}
-		else if( CMPTOK("union") ) {
-			char	*name = NULL;
-			tok = GetToken();
-			// Get Name
-			if(tok == TOK_IDENT) {
-				name = strndup(gsTokenStart, giTokenLength);
-				tok = GetToken();
-			}
-			// Get Definition
-			if(tok == TOK_BRACE_OPEN) {
-				PutBack();	// Symbol_ParseStruct wants the opeing brace
-				ret = Symbol_ParseUnion(name);
-				tok = GetToken();
-			}
-			// Unnamed and undefined
-			else if(!name) {
-				SyntaxError("Expected union name");
-				return NULL;
-			}
-			// Named and undefined
-			else
-				ret = Symbol_GetUnion(name);
-			goto ptrAndAccess;
-		}
-		else if( CMPTOK("enum") ) {
-			char	*name = NULL;
-			tok = GetToken();
-			fprintf(stderr, "DEBUG: TODO - enums\n");
-			// Get name
-			if(tok == TOK_IDENT) {
-				name = strndup(gsTokenStart, giTokenLength);
-				tok = GetToken();
-			}
-			// Get definition
-			if(tok == TOK_BRACE_OPEN) {
-				PutBack();	// Symbol_ParseStruct wants the opeing brace
-				ret = Symbol_ParseEnum(name);
-				tok = GetToken();
-			}
-			// Unnamed and undefined
-			else if(!name) {
-				SyntaxError("Expected union name");
-				return NULL;
-			}
-			// Named and undefined
-			else
-				ret = Symbol_GetEnum(name);
-			goto ptrAndAccess;
-		}
-	
-		if( CMPTOK("signed") ) {
-			bSigned = 1;
-			tok = GetToken();
-		}
-		else if( CMPTOK("unsigned") ) {
-			bSigned = 0;
-			tok = GetToken();
-		}
-
-		if( CMPTOK("char") ) {
-			size = 8;	// 8-bit char
-		}
-		else if( CMPTOK("short") ) {
-			size = 16;	// 16-bit short
-		}
-		else if( CMPTOK("long") ) {
-			size = 32;	// 32-bit int
-		}
-		else if( CMPTOK("int") ) {
-			size = 32;	// 32-bit int
-		}
-		else if( CMPTOK("void") ) {
-			size = 0;
-		}
-		
-		if( size == -1 ) {
-			char	*tmp = strndup(gsTokenStart, giTokenLength);
-			ret = Symbol_ResolveTypedef(tmp, depth);
-			if(!ret) {
-				SyntaxErrorF("Unexpected '%s'", tmp);
-				free(tmp);
-				return NULL;
-			}
-			free(tmp);
-		}
-		else {
-			ret = Symbol_CreateIntegralType(bSigned, bConst, linkage, size, depth);
-		}
-		
-		tok = GetToken();	
-	}
-	
-ptrAndAccess:
-	// Pointer
-	while(tok == TOK_ASTERISK) {
-		depth ++;
-		tok = GetToken();
-	}
-	
-	// - Const/Volatile
-	if(tok == TOK_IDENT)
-	{
-		// Constant?
-		if( CMPTOK("const") ) {
-			bConst = 1;
-			tok = GetToken();
+		switch(GetToken(Parser))
+		{
+		case TOK_RWORD_TYPEDEF:
+			// Type definition
+			// - Expect a type and storage classes
+			TODO("root typedef");
+			// - Hand off to common code with global scope
+			//Parse_DoTypedef(Parser, NULL);
+			break;
+		// - Storage classes
+		case TOK_RWORD_STATIC:
+		case TOK_RWORD_EXTERN:
+		case TOK_RWORD_CONST:
+		case TOK_RWORD_INLINE:
+			// - Hand off to common code
+			Parse_DoDefinition(Parser, NULL);
+			break;
+		// - Compound types
+		case TOK_RWORD_STRUCT:
+		case TOK_RWORD_UNION:
+		case TOK_RWORD_ENUM:
+			// Fetch compound type descriptor (and handle definition)
+			TODO("root compound");
+			break;
+		// - Identifiers (should be a type)
+		case TOK_IDENT:
+			// Function/global definition
+			Parse_DoTopIdent(Parser, false);
+			break;
+		default:
+			// Error
+			SyntaxError(Parser, "Unexpected %s in root", GetTokenStr(Parser->Cur.Token));
+			break;
 		}
 	}
-	PutBack();
-	
-	ret->bConst = bConst;
-	ret->PtrDepth = depth;
-	return ret;
 }
 
 /**
- * \brief Gets the definion of a variable or function
+ * \brief Handle storage classes, structs, unions, enums, primative types
  */
-void GetDefinition(void)
+tType *Parse_GetType(tParser *Parser)
 {
-	tType	*type;
-	char	*name;
-	void	*ptr;
-	 int	tok;
- 	 int	i;
- 	tAST_Node	*node;
-	
-	type = GetType();
-	tok = GetToken();
-	if( tok == TOK_SEMICOLON ) {
-		//if(type->Type != 2 && type->Type != 3)
-		//	WarningF("Definition of a type with no variable");
-		return;
-	}
-	SyntaxAssert(tok, TOK_IDENT);
-	name = strndup(gsTokenStart, giTokenLength);
-	DEBUG1("Creating '%s'\n", name);
-	
-	switch(GetToken())
+	tType	*type = NULL;
+	unsigned int	storage_classes = 0;
+	// Consume storage classes until an identifier is hit
+	// - Asterisk creates a pointer using current classes
+	while( !type || Parser->Cur.Token != TOK_IDENT )
 	{
-	case TOK_SEMICOLON:
-		// Create variable in .bss / Define extern var
-		Symbol_AddGlobalVariable(type, strdup(name), 0);
-		break;
-	case TOK_ASSIGNEQU:
-		// Create variable in .data
-		node = DoExpr0();
-		node = Optimiser_StaticOpt(node);
-		if(node->Type != NODETYPE_INTEGER) {
-			SyntaxErrorF("Non static initialiser");
-			exit(1);
-		}
-		Symbol_AddGlobalVariable(type, strdup(name), node->Integer.Value);
-		break;
-	case TOK_PAREN_OPEN:
-		ptr = Symbol_GetFunction(type, strdup(name));
-		i = 0;
-		// Create function
-		while(LookAhead() == TOK_IDENT)
+		switch( Parser->Cur.Token )
 		{
-			tType	*type;
-			char	*name = NULL;
-			
-			type = GetType();
-			DEBUG1("type = {Type:%i,PtrDepth:%i,Size:%i,...}\n",
-				type->Type, type->PtrDepth, type->Integer.Bits);
-			
-			if( i == 0 && type->Type == 0 ) {
-				SyntaxAssert( GetToken(), TOK_PAREN_CLOSE );
-				break;
+		case TOK_IDENT:
+			// Identifier, should only happen if Type is unset
+			assert(!type);
+			type = Types_GetTypeFromName(Parser->Cur.TokenStart, Parser->Cur.TokenLen);
+			if( !type ) {
+				SyntaxError(Parser, "'%.*s' does not describe a type",
+					Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+				return NULL;
 			}
-			if( GetToken() == TOK_IDENT )
-			{
-				name = strndup(gsTokenStart, giTokenLength);
-				Symbol_SetArgument(ptr, i, type, name);
-				DEBUG2(" Argument %i - '%s'\n", i, name);
-				GetToken();
-			}
-			
-			if( giToken == TOK_PAREN_CLOSE )
-				break;
-			if( giToken != TOK_COMMA )
-				SyntaxError2(giToken, TOK_COMMA);
-			i ++;
-		}
-		
-		if(LookAhead() == TOK_VAARG) {
-			GetToken();
-			DEBUG1("type = VA_ARG\n");
-			Symbol_SetFunctionVariableArgs(ptr);
-			GetToken();
-			if( giToken != TOK_PAREN_CLOSE )
-				SyntaxError2(giToken, TOK_PAREN_CLOSE);
-		}
-		switch( (tok = LookAhead()) )
-		{
-		case TOK_BRACE_OPEN:
-			Symbol_SetFunction( ptr );
-			Symbol_SetFunctionCode( ptr, DoCodeBlock() );
 			break;
-		case TOK_SEMICOLON:
-			GetToken();
+		case TOK_ASTERISK:
+			// Pointer
+			// - Determine type
+			//type = Types_ApplyStorageClasses(type, storage_classes);
+			//type = Types_CreatePointerType(type);
+			// - Clear
+			storage_classes = 0;
+			// - Continue on
 			break;
+		case TOK_RWORD_STATIC:	storage_classes |= 1;	break;
+		case TOK_RWORD_INLINE:	storage_classes |= 2;	break;
+		case TOK_RWORD_EXTERN:	storage_classes |= 4;	break;
+		case TOK_RWORD_CONST:	storage_classes	|= 8;	break;
 		default:
-			printf("gsTokenStart = \"%s\"\n", strndup(gsTokenStart, giTokenLength));
-			SyntaxError3(tok, TOK_BRACE_OPEN, TOK_SEMICOLON, 0);
-			break;
+			SyntaxError_T(Parser, Parser->Cur.Token, "Expected * or storage class");
+			Types_DerefType(type);
+			return NULL;
 		}
-		break;
-	default:
-		SyntaxError2(giToken, 0);
-		break;
+		GetToken(Parser);
 	}
-	free(name);
+	return type;
+}
+
+/**
+ * \brief Handle variable/function definition
+ */
+int Parse_DoDefinition(tParser *Parser, tType *Type)
+{
+	SyntaxAssert(Parser, Parser->Cur.Token, TOK_IDENT);
+	
+	// Current token is variable/function name
+	
+	// - next '(' = Declare function
+	if( LookAhead(Parser) == TOK_PAREN_OPEN )
+	{
+		// Parse function arguments
+		TODO("Function definition arguments");
+	}
+	// - next * = Declare variable
+	else
+	{
+		TODO("Variable definition");
+	}
+	return 1;
+}
+
+/*
+ * \brief Handle an identifier at the top of the parse tree (first token in a statement)
+ * 
+ * \param NoCode	Set if outside of a function (errors if not a definition)
+ */
+tAST_Node *Parse_DoTopIdent(tParser *Parser, bool NoCode)
+{
+	// 1. Must be an identifier
+	SyntaxAssert(Parser, Parser->Cur.Token, TOK_IDENT);
+	
+	// 2. If next token is:
+	switch(LookAhead(Parser))
+	{
+	// - An identifier = Definition (prev must be a type)
+	case TOK_IDENT:
+	// - Storage class = Definition (prev must be a type)
+	case TOK_RWORD_STATIC:
+	case TOK_RWORD_EXTERN:
+	case TOK_RWORD_INLINE:
+	case TOK_RWORD_CONST:
+		{
+			// Get type
+			tType *type = Parse_GetType(Parser);
+			if( !type ) {
+				return NULL;
+			}
+			
+			if( Parse_DoDefinition(Parser, type) )
+				return NULL;
+		}
+		return ACC_ERRPTR;
+	// - * = Variable reference (or function call)
+	default:
+		if( NoCode ) {
+			// Error!
+			SyntaxError(Parser, "Unexpected %s", GetTokenStr(Parser->Cur.Token));
+			return NULL;
+		}
+		// Descend into expression code
+		return DoExpr0(Parser);
+	}
+
+	return NULL;
 }
 
 /**
  * \fn tAST_Node *DoCodeBlock()
  * \brief Parses a code block, or a single statement
  */
-tAST_Node *DoCodeBlock()
+tAST_Node *DoCodeBlock(tParser *Parser)
 {
-	if(LookAhead() == TOK_BRACE_OPEN)
+	if(LookAhead(Parser) == TOK_BRACE_OPEN)
 	{
+		GetToken(Parser);
 		tAST_Node	*ret = AST_NewCodeBlock();
-		Symbol_EnterBlock();
-		GetToken();
 		// Parse Block
-		while(LookAhead() != TOK_BRACE_CLOSE)
+		while(LookAhead(Parser) != TOK_BRACE_CLOSE)
 		{
-			AST_AppendNode( ret, DoStatement());
+			AST_AppendNode( ret, DoStatement(Parser) );
 		}
-		GetToken();
-		Symbol_LeaveBlock();
+		GetToken(Parser);
 		return ret;
 	}
-	else
-		return DoStatement();
+
+	return DoStatement(Parser);
 }
 
 /**
  * \brief Parses a statement _within_ a function
  */
-tAST_Node *DoStatement()
+tAST_Node *DoStatement(tParser *Parser)
 {
-	 int	tok, id;
 	tAST_Node	*ret;
 
-	DEBUG2("%s:%i - Statement %i\n", gsCurFile, giLine, giStatement++);
-	tok = LookAhead();
-	DEBUG3(" DoStatement: LookAhead() = %s\n", GetTokenStr(tok));
-	switch(tok)
+	switch(LookAhead(Parser))
 	{
-	case TOK_RSVDWORD:
-		GetToken();
-		id = GetReservedWord();
-		switch(id)
-		{
-		// Code Blocks
-		case RWORD_IF:
-			return DoIf();
-			break;
-		case RWORD_WHILE:
-			return DoWhile();
-			break;
-		case RWORD_FOR:
-			return DoFor();
-			break;
-		
-		// Operations
-		case RWORD_RETURN:
-			ret = DoReturn();
-			SyntaxAssert( GetToken(), TOK_SEMICOLON );
-			break;
-
-		// TODO - Variables
-
-		default:
-			SyntaxError("Unimplemented Reserved word");
-			exit(-1);
-		}
-		break;
-
+	case TOK_RWORD_IF:
+		GetToken(Parser);
+		return DoIf(Parser);
 	case TOK_EOF:
 		return NULL;
 
-#if 0
+	case TOK_RWORD_RETURN:
+		ret = DoReturn(Parser);
+		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
+		break;
 	case TOK_IDENT:
-		char	*str;
-		GetToken();
-		str = strndup(gsTokenStart, giTokenLength);
-		if( IsTypeDecl(str) )
-		{
-			break;
-		}
-#endif
+		ret = Parse_DoTopIdent(Parser, false);
+		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
+		break;
 	default:
-		ret = DoExpr0();
-		SyntaxAssert( GetToken(), TOK_SEMICOLON );
+		ret = DoExpr0(Parser);
+		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
 		break;
 	}
 	return ret;
 }
 
 /**
- * \fn tAST_Node *DoIf()
  * \brief Parses an if block
  */
-tAST_Node *DoIf()
+tAST_Node *DoIf(tParser *Parser)
 {
-	tAST_Node	*test, *true;
-	tAST_Node	*false = NULL;
+	tAST_Node	*test, *true_code;
+	tAST_Node	*false_code = NULL;
 
-	GetToken();	// Get (
-	SyntaxAssert(giToken, TOK_PAREN_OPEN);
-	test = DoExpr0();
-	GetToken();	// Get )
-	SyntaxAssert(giToken, TOK_PAREN_CLOSE);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN);		// Eat (
+	test = DoExpr0(Parser);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);	// Eat )
 
 	// Contents
-	true = DoCodeBlock();
+	true_code = DoCodeBlock(Parser);
 
-	if(GetToken() == TOK_RSVDWORD)
+	if(GetToken(Parser) == TOK_RWORD_ELSE)
 	{
-		 int	id;
-		// Check the the reserved word is else
-		id = GetReservedWord();
-		if( id != RWORD_ELSE )
-			PutBack();
-		else
-			false = DoCodeBlock();
+		false_code = DoCodeBlock(Parser);
 	}
 
-	return AST_NewIf(test, true, false);
+	return AST_NewIf(test, true_code, false_code);
 }
 
 /**
- * \fn tAST_Node *DoWhile()
  * \brief Parses a while block
  */
-tAST_Node *DoWhile()
+tAST_Node *DoWhile(tParser *Parser)
 {
 	tAST_Node	*test, *code;
 
-	GetToken();	// Get (
-	SyntaxAssert(giToken, TOK_PAREN_OPEN);
-	test = DoExpr0();
-	GetToken();	// Get )
-	SyntaxAssert(giToken, TOK_PAREN_CLOSE);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN);
+	test = DoExpr0(Parser);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);
 
 	// Contents
-	code = DoCodeBlock();
+	code = DoCodeBlock(Parser);
 
 	return AST_NewWhile(test, code);
 }
@@ -505,27 +315,28 @@ tAST_Node *DoWhile()
  * \fn tAST_Node *DoFor()
  * \brief Handle FOR loops
  */
-tAST_Node *DoFor()
+tAST_Node *DoFor(tParser *Parser)
 {
 	tAST_Node	*init, *test, *post, *code;
 
-	GetToken();	SyntaxAssert(giToken, TOK_PAREN_OPEN);	// Eat (
+	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN);	// Eat (
 
-	// Initialiser
-	init = DoExpr0();
-	GetToken();	SyntaxAssert(giToken, TOK_SEMICOLON);	// Eat ;
+	// Initialiser (definition valid)
+	// TODO: Support defining variables in initialiser
+	init = DoExpr0(Parser);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON);	// Eat ;
 
 	// Condition
-	test = DoExpr0();
-	GetToken();	SyntaxAssert(giToken, TOK_SEMICOLON);	// Eat ;
+	test = DoExpr0(Parser);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON);	// Eat ;
 
 	// Postscript
-	post = DoExpr0();
+	post = DoExpr0(Parser);
 
-	GetToken();	SyntaxAssert(giToken, TOK_PAREN_CLOSE);	// Eat )
+	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);	// Eat )
 
 	// Contents
-	code = DoCodeBlock();
+	code = DoCodeBlock(Parser);
 
 	return AST_NewFor(init, test, post, code);
 }
@@ -533,212 +344,251 @@ tAST_Node *DoFor()
 /**
  * \brief Handle a return statement
  */
-tAST_Node *DoReturn(void)
+tAST_Node *DoReturn(tParser *Parser)
 {
-	return AST_NewUniOp( NODETYPE_RETURN, DoExpr0() );
+	return AST_NewUniOp( NODETYPE_RETURN, DoExpr0(Parser) );
 }
 
 // --------------------
 // Expression 0 - Assignments
 // --------------------
-tAST_Node *DoExpr0()
+tAST_Node *DoExpr0(tParser *Parser)
 {
-	tAST_Node	*ret = DoExpr1();
-
-	// Check Assignment
-	switch(LookAhead())
+	#define _next	DoExpr1
+	tAST_Node	*ret = _next(Parser);
+	bool	cont = true;
+	while(cont)
 	{
-	case TOK_ASSIGNEQU:
-		GetToken();		// Eat Token
-		ret = AST_NewAssign(ret, DoExpr0());
-		break;
-	case TOK_DIV_EQU:
-		GetToken();		// Eat Token
-		ret = AST_NewAssignOp(ret, NODETYPE_DIVIDE, DoExpr0());
-		break;
-	case TOK_MULT_EQU:
-		GetToken();		// Eat Token
-		ret = AST_NewAssignOp(ret, NODETYPE_MULTIPLY, DoExpr0());
-		break;
-	default:	break;
+		switch(GetToken(Parser))
+		{
+		case TOK_ASSIGNEQU:
+			ret = AST_NewAssign(ret, _next(Parser));
+			break;
+		case TOK_DIV_EQU:
+			ret = AST_NewAssignOp(ret, NODETYPE_DIVIDE, _next(Parser));
+			break;
+		case TOK_MULT_EQU:
+			ret = AST_NewAssignOp(ret, NODETYPE_MULTIPLY, _next(Parser));
+			break;
+		default:
+			PutBack(Parser);
+			cont = false;
+			break;
+		}
 	}
 	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 1 - Ternary
 // TODO: Implement Ternary Operator
 // --------------------
-tAST_Node *DoExpr1()
+tAST_Node *DoExpr1(tParser *Parser)
 {
-	return DoExpr2();
+	#define _next	DoExpr2
+	tAST_Node *ret = _next(Parser);
+	if( LookAhead(Parser) == TOK_QMARK )
+	{
+		TODO("Ternary operator");
+	}
+	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 2 - Boolean AND/OR
 // --------------------
-tAST_Node *DoExpr2()
+tAST_Node *DoExpr2(tParser *Parser)
 {
-	tAST_Node	*ret, *right;
-	ret = DoExpr3();
-
-	switch(LookAhead())
+	#define _next	DoExpr3
+	tAST_Node	*ret = _next(Parser);
+	bool	cont = true;
+	while(cont)
 	{
-	case TOK_LOGICOR:
-		GetToken();		// Eat Token
-		right = DoExpr2();		// Recurse
-		ret = AST_NewBinOp(NODETYPE_BOOLOR, ret, right);
-		break;
-	case TOK_LOGICAND:
-		GetToken();		// Eat Token
-		right = DoExpr2();		// Recurse
-		ret = AST_NewBinOp(NODETYPE_BOOLOR, ret, right);
-		break;
-	default:	break;
+		switch(GetToken(Parser))
+		{
+		case TOK_LOGICOR:
+			ret = AST_NewBinOp(NODETYPE_BOOLOR, ret, _next(Parser));
+			break;
+		case TOK_LOGICAND:
+			ret = AST_NewBinOp(NODETYPE_BOOLOR, ret, _next(Parser));
+			break;
+		default:
+			PutBack(Parser);
+			cont = false;
+			break;
+		}
 	}
 	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 3 - Bitwise Operators
 // --------------------
-tAST_Node *DoExpr3()
+tAST_Node *DoExpr3(tParser *Parser)
 {
-	tAST_Node	*ret = DoExpr4();
-
-	// Check Token
-	switch(LookAhead())
+	#define _next	DoExpr4
+	tAST_Node	*ret = _next(Parser);
+	bool	cont = true;
+	while(cont)
 	{
-	case TOK_OR:
-		GetToken();		// Eat Token
-		ret = AST_NewBinOp(NODETYPE_BWOR, ret, DoExpr3());
-		break;
-	case TOK_AMP:
-		GetToken();		// Eat Token
-		ret = AST_NewBinOp(NODETYPE_BWAND, ret, DoExpr3());
-		break;
-	case TOK_XOR:
-		GetToken();		// Eat Token
-		ret = AST_NewBinOp(NODETYPE_BWXOR, ret, DoExpr3());
-		break;
-	default:	break;
+		switch(GetToken(Parser))
+		{
+		case TOK_OR:
+			ret = AST_NewBinOp(NODETYPE_BWOR, ret, _next(Parser));
+			break;
+		case TOK_AMP:
+			ret = AST_NewBinOp(NODETYPE_BWAND, ret, _next(Parser));
+			break;
+		case TOK_XOR:
+			ret = AST_NewBinOp(NODETYPE_BWXOR, ret, _next(Parser));
+			break;
+		default:
+			cont = false;
+			break;
+		}
 	}
 	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 4 - Comparison Operators
 // --------------------
-tAST_Node *DoExpr4()
+tAST_Node *DoExpr4(tParser *Parser)
 {
-	tAST_Node	*ret = DoExpr5();
+	#define _next	DoExpr5
+	tAST_Node	*ret = _next(Parser);
 
 	// Check token
-	switch(LookAhead())
+	bool cont = true;
+	while( cont )
 	{
-	case TOK_CMPEQU:
-		GetToken();		// Eat Token
-		ret = AST_NewBinOp(NODETYPE_EQUALS, ret, DoExpr4());
-		break;
-	case TOK_LT:
-		GetToken();	// Eat <
-		ret = AST_NewBinOp(NODETYPE_LESSTHAN, ret, DoExpr4());
-		break;
-	case TOK_GT:
-		GetToken();	// Eat >
-		ret = AST_NewBinOp(NODETYPE_GREATERTHAN, ret, DoExpr4());
-		break;
-	default:	break;
+		switch(GetToken(Parser))
+		{
+		case TOK_CMPEQU:
+			ret = AST_NewBinOp(NODETYPE_EQUALS, ret, _next(Parser));
+			break;
+		case TOK_LT:
+			ret = AST_NewBinOp(NODETYPE_LESSTHAN, ret, _next(Parser));
+			break;
+		case TOK_GT:
+			ret = AST_NewBinOp(NODETYPE_GREATERTHAN, ret, _next(Parser));
+			break;
+		default:
+			PutBack(Parser);
+			cont = false;
+			break;
+		}
 	}
 	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 5 - Shifts
 // --------------------
-tAST_Node *DoExpr5()
+tAST_Node *DoExpr5(tParser *Parser)
 {
-	tAST_Node *ret = DoExpr6();
-
-	switch(LookAhead())
+	#define _next	DoExpr6
+	tAST_Node *ret = _next(Parser);
+	bool	cont = true;
+	while( cont )
 	{
-	case TOK_SHL:
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_BITSHIFTLEFT, ret, DoExpr5());
-		break;
-	case TOK_SHR:
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_BITSHIFTRIGHT, ret, DoExpr5());
-		break;
-	default:	break;
+		switch(GetToken(Parser))
+		{
+		case TOK_SHL:
+			ret = AST_NewBinOp(NODETYPE_BITSHIFTLEFT, ret, _next(Parser));
+			break;
+		case TOK_SHR:
+			ret = AST_NewBinOp(NODETYPE_BITSHIFTRIGHT, ret, _next(Parser));
+			break;
+		default:
+			cont = false;
+			PutBack(Parser);
+			break;
+		}
 	}
-
 	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 6 - Arithmatic
 // --------------------
-tAST_Node *DoExpr6()
+tAST_Node *DoExpr6(tParser *Parser)
 {
-	tAST_Node	*ret = DoExpr7();
+	#define _next	DoExpr7
+	tAST_Node	*ret = _next(Parser);
+	bool	cont = true;
 
-	switch(LookAhead())
+	while(cont)
 	{
-	case TOK_PLUS:
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_ADD, ret, DoExpr6());
-		break;
-	case TOK_MINUS:
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_SUBTRACT, ret, DoExpr6());
-		break;
-	default:	break;
+		switch(LookAhead(Parser))
+		{
+		case TOK_PLUS:
+			ret = AST_NewBinOp(NODETYPE_ADD, ret, _next(Parser));
+			break;
+		case TOK_MINUS:
+			ret = AST_NewBinOp(NODETYPE_SUBTRACT, ret, _next(Parser));
+			break;
+		default:
+			PutBack(Parser);
+			cont = false;
+			break;
+		}
 	}
-
 	return ret;
+	#undef _next
 }
 
 // --------------------
 // Expression 7 - Multiplcation / Division
 // --------------------
-tAST_Node *DoExpr7()
+tAST_Node *DoExpr7(tParser *Parser)
 {
-	tAST_Node	*ret = DoExpr8();
-	switch(LookAhead())
+	#define _next	DoExpr8
+	tAST_Node	*ret = _next(Parser);
+	bool	cont = true;
+	while( cont )
 	{
-	case TOK_ASTERISK:
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_MULTIPLY, ret, DoExpr7());
-		break;
-	case TOK_DIVIDE:
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_DIVIDE, ret, DoExpr7());
-		break;
-	default:	break;
+		switch(GetToken(Parser))
+		{
+		case TOK_ASTERISK:
+			ret = AST_NewBinOp(NODETYPE_MULTIPLY, ret, _next(Parser));
+			break;
+		case TOK_DIVIDE:
+			ret = AST_NewBinOp(NODETYPE_DIVIDE, ret, _next(Parser));
+			break;
+		default:
+			PutBack(Parser);
+			cont = false;
+			break;
+		}
 	}
-
 	return ret;
 }
 
 // --------------------
 // Expression 8 - Unaries Right
 // --------------------
-tAST_Node *DoExpr8()
+tAST_Node *DoExpr8(tParser *Parser)
 {
-	tAST_Node	*ret = DoExpr9();
+	tAST_Node	*ret = DoExpr9(Parser);
 
-	switch(LookAhead())
+	switch(GetToken(Parser))
 	{
 	case TOK_INC:
-		GetToken();
 		ret = AST_NewUniOp(NODETYPE_POSTINC, ret);
 		break;
 	case TOK_DEC:
-		GetToken();
 		ret = AST_NewUniOp(NODETYPE_POSTDEC, ret);
 		break;
-	default:	break;
+	default:
+		PutBack(Parser);
+		break;
 	}
 
 	return ret;
@@ -747,44 +597,32 @@ tAST_Node *DoExpr8()
 // --------------------
 // Expression 9 - Unaries Left
 // --------------------
-tAST_Node *DoExpr9()
+tAST_Node *DoExpr9(tParser *Parser)
 {
-	tAST_Node	*ret;
-	switch(LookAhead())
+	tAST_Node	*ret = DoMember(Parser);
+	switch(GetToken(Parser))
 	{
 	case TOK_INC:
-		GetToken();
-		ret = AST_NewUniOp(NODETYPE_PREINC, DoMember());
+		ret = AST_NewUniOp(NODETYPE_PREINC, ret);
 		break;
 	case TOK_DEC:
-		GetToken();
-		ret = AST_NewUniOp(NODETYPE_PREDEC, DoMember());
+		ret = AST_NewUniOp(NODETYPE_PREDEC, ret);
 		break;
 	case TOK_MINUS:
-		GetToken();
-		ret = AST_NewUniOp(NODETYPE_NEGATE, DoMember());
+		ret = AST_NewUniOp(NODETYPE_NEGATE, ret);
 		break;
 	case TOK_NOT:
-		GetToken();
-		ret = AST_NewUniOp(NODETYPE_BWNOT, DoMember());
+		ret = AST_NewUniOp(NODETYPE_BWNOT, ret);
 		break;
-
 	case TOK_AMP:
-		GetToken();
-		ret = AST_NewUniOp(NODETYPE_ADDROF, DoMember());
+		ret = AST_NewUniOp(NODETYPE_ADDROF, ret);
 		break;
-
-	case TOK_RSVDWORD:
-		GetToken();
-		SyntaxError("Unexpected reserved word");
-		return NULL;
-
 	case TOK_ASTERISK:
-		ret = AST_NewUniOp(NODETYPE_DEREF, DoMember());
+		ret = AST_NewUniOp(NODETYPE_DEREF, ret);
 		break;
 
 	default:
-		ret = DoMember();
+		PutBack(Parser);
 		break;
 	}
 	return ret;
@@ -794,20 +632,19 @@ tAST_Node *DoExpr9()
 // Member dereferences (. and ->)
 // TODO: Fix
 // ---
-tAST_Node *DoMember()
+tAST_Node *DoMember(tParser *Parser)
 {
-	tAST_Node	*ret = DoParen();
-	switch(LookAhead())
+	tAST_Node	*ret = DoParen(Parser);
+	switch(GetToken(Parser))
 	{
 	case TOK_DOT:	// .
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_MEMBER, ret, DoMember());
+		ret = AST_NewBinOp(NODETYPE_MEMBER, ret, DoMember(Parser));
 		break;
 	case TOK_MEMBER:	// ->
-		GetToken();
-		ret = AST_NewBinOp(NODETYPE_MEMBER, AST_NewUniOp(NODETYPE_DEREF, ret), DoMember());
+		ret = AST_NewBinOp(NODETYPE_MEMBER, AST_NewUniOp(NODETYPE_DEREF, ret), DoMember(Parser));
 		break;
 	default:
+		PutBack(Parser);
 		break;
 	}
 	return ret;
@@ -816,116 +653,118 @@ tAST_Node *DoMember()
 // --------------------
 // 2nd Last Expression - Parens
 // --------------------
-tAST_Node *DoParen()
+tAST_Node *DoParen(tParser *Parser)
 {
-	if(LookAhead() == TOK_PAREN_OPEN)
+	if(LookAhead(Parser) == TOK_PAREN_OPEN)
 	{
 		tAST_Node	*ret;
-		GetToken();
-		ret = DoExpr0();
-		GetToken();
-		SyntaxAssert(giToken, TOK_PAREN_CLOSE);
+		GetToken(Parser);
+		ret = DoExpr0(Parser);
+		SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);
 		return ret;
 	}
 	else
-		return DoValue();
+		return DoValue(Parser);
 }
 
 // --------------------
 // Last Expression - Value
 // --------------------
-tAST_Node *DoValue()
+tAST_Node *DoValue(tParser *Parser)
 {
-	 int	tok = LookAhead();
-
-	switch(tok)
+	switch(LookAhead(Parser))
 	{
-	case TOK_STR:	return GetString();
-	case TOK_CHAR:	return GetCharConst();
-	case TOK_CONST_NUM:	return GetNumeric();
-	case TOK_IDENT:	return GetIdent();
+	case TOK_STR:	return GetString(Parser);
+	case TOK_CHAR:	return GetCharConst(Parser);
+	case TOK_CONST_NUM:	return GetNumeric(Parser);
+	case TOK_IDENT:	return GetIdent(Parser);
 
 	default:
-		ParseError2( tok, TOK_T_VALUE );
+		SyntaxAssert(Parser, GetToken(Parser), TOK_T_VALUE);
 		return NULL;
 	}
+}
+
+size_t Parse_ConvertString(tParser *Parser, char *Output, const char *Src, size_t SrcLen)
+{
+	size_t	ret = 0;
+	for( int i = 0; i < SrcLen; i++ )
+	{
+		if( Src[i] == '\\' )
+		{
+			i ++;
+			assert(i != SrcLen);	// Lexer shouldn't allow, as it would have escaped closing "
+			char ch = 0;
+			switch(Src[i])
+			{
+			case '"':	ch = '"';	break;
+			case 'n':	ch = '\n';	break;
+			case 'r':	ch = '\r';	break;
+			case 't':	ch = '\t';	break;
+			case 'b':	ch = '\b';	break;
+			case '0' ... '7':
+				// Octal constant
+				TODO("Octal constants in strings");
+				break;
+			case 'x':
+				// Hex constant
+				TODO("Hex constants in strings");
+				break;
+			default:
+				// oopsie
+				break;
+			}
+			if(Output)
+				Output[ret] = ch;
+			ret ++;
+		}
+		else
+		{
+			if(Output)
+				Output[ret] = Src[i];
+			ret ++;
+		}
+	}
+	return ret;
 }
 
 /**
  * \fn tAST_Node *GetSimpleString()
  * \brief Parses a simple string
  */
-tAST_Node *GetString()
+tAST_Node *GetString(tParser *Parser)
 {
-	char	*buf;
-	 int	i, j;
-
-	GetToken();
-	// Check token
-	if(giToken != TOK_STR)	ParseError2( giToken, TOK_STR );
+	SyntaxAssert(Parser, GetToken(Parser), TOK_STR);
 
 	// Parse String
-	buf = malloc(giTokenLength+1);
-	for(i=0,j=0;i<giTokenLength;j++,i++)
-	{
-		if(gsTokenStart[i] == '\\')
-		{
-			i ++;
-			switch(gsTokenStart[i])
-			{
-			case '"':	buf[j] = '"';	break;
-			case 'n':	buf[j] = '\n';	break;
-			case 'r':	buf[j] = '\r';	break;
-			case 't':	buf[j] = '\t';	break;
-			case 'b':	buf[j] = '\b';	break;
-			}
-		}
-		else
-			buf[j] = gsTokenStart[i];
-	}
-	buf[j] = '\0';
+	size_t	len = Parse_ConvertString(Parser, NULL, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
+	char *buf = malloc( len+1 );
+	assert(buf);
+	Parse_ConvertString(Parser, buf, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
+	buf[len] = '\0';
 
-	return AST_NewString( buf, j );
+	return AST_NewString( buf, len );
 }
 
 /**
  * \fn tAST_Node *GetCharConst()
  * \brief Parses a character constant
  */
-tAST_Node *GetCharConst()
+tAST_Node *GetCharConst(tParser *Parser)
 {
-	 int	i;
 	uint64_t	val;
 
-	GetToken();
-	// Check token
-	if(giToken != TOK_STR)	ParseError2( giToken, TOK_STR );
-
-	if( giTokenLength > 8 )
-		SyntaxError("Character constant is over 8-bytes");
+	SyntaxAssert(Parser, GetToken(Parser), TOK_STR);
 
 //	if( giTokenLength > 1 )
 //		SyntaxWarning("Multi-byte character constants are not recommended");
 
-	// Parse String
-	for( i = 0; i < giTokenLength; i ++ )
-	{
-		val <<= 8;
-		if(gsTokenStart[i] == '\\')
-		{
-			i ++;
-			switch(gsTokenStart[i])
-			{
-			case '\'':	val |= '\'';	break;
-			case 'n':	val |= '\n';	break;
-			case 'r':	val |= '\r';	break;
-			default:
-				SyntaxError("Unkown escape sequence in character constant");
-			}
-		}
-		else
-			val |= gsTokenStart[i];
-	}
+	// Parse constant (local machine endian?)
+	size_t len = Parse_ConvertString(Parser, NULL, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
+	if( len > 8 )
+		SyntaxError(Parser, "Character constant is over 8-bytes");
+	
+	Parse_ConvertString(Parser, (void*)&val, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
 
 	return AST_NewInteger(val);
 }
@@ -934,138 +773,19 @@ tAST_Node *GetCharConst()
  * \fn tAST_Node *GetNumeric()
  * \brief Reads a numeric value
  */
-tAST_Node *GetNumeric()
+tAST_Node *GetNumeric(tParser *Parser)
 {
-	 int	value;
-	char	temp[60];
-	GetToken();
 	// Check token
-	if(giToken != TOK_CONST_NUM)
-		ParseError2( giToken, TOK_CONST_NUM );
+	SyntaxAssert(Parser, GetToken(Parser), TOK_CONST_NUM);
 
 	// Create Temporary String
-	for( value = 0; value < giTokenLength; value ++ )
-		temp[ value ] = gsTokenStart[ value ];
-	temp[ value ] = '\0';
+	char	temp[Parser->Cur.TokenLen+1];
+	for( int i = 0; i < Parser->Cur.TokenLen; i ++ )
+		temp[ i ] = Parser->Cur.TokenStart[ i ];
+	temp[ Parser->Cur.TokenLen ] = '\0';
 
 	// Get value
-	value = strtol( temp, NULL, 0 );
-
+	long value = strtol( temp, NULL, 0 );
 	return AST_NewInteger( value );
 }
 
-/**
- * \fn tAST_Node *GetIdent()
- * \brief Read an identifier
- */
-tAST_Node *GetIdent()
-{
-	tSymbol	*sym = NULL;
-	char	*str;
-	tAST_Node	*node;
-	
-	DEBUG3(" GetIdent: ()\n");
-	GetToken();
-
-	// Get ID
-	str = strndup(gsTokenStart, giTokenLength);
-
-	// Function?
-	if(LookAhead() == TOK_PAREN_OPEN)
-	{
-		tAST_Node	*fcn, *ret;
-
-		if( (sym = Symbol_GetLocalVariable(str)) )
-		{
-			if( Symbol_GetSymClass(sym) != SYMCLASS_FCNPTR ) {
-				SyntaxError("Unexpected '('");
-			}
-			fcn = AST_NewUniOp( NODETYPE_DEREF, AST_NewLocalVar( sym ) );
-		}
-		else
-		{
-			sym = Symbol_ResolveSymbol(str);
-			if(!sym) {
-				SyntaxErrorF("Function '%s' is undefined", str);
-			}
-		
-			switch( Symbol_GetSymClass(sym) )
-			{
-			case SYMCLASS_FCNPTR:
-				fcn = AST_NewUniOp( NODETYPE_DEREF, AST_NewSymbol( sym, str ) );
-				break;
-			case SYMCLASS_FCN:
-				fcn = AST_NewSymbol( sym, str );
-				break;
-			default:
-				SyntaxError("Unexpected '('");
-				break;
-			}
-		}
-
-		ret = AST_NewFunctionCall( fcn );
-
-		// Get Arguments
-		GetToken();	// Eat (
-		if( LookAhead() != TOK_PAREN_CLOSE )
-		{
-			do {
-				AST_AppendNode(ret, DoExpr0());
-				GetToken();
-				DEBUG3("  giToken = %s\n", GetTokenStr(giToken));
-			}	while( giToken == TOK_COMMA );
-			if(giToken != TOK_PAREN_CLOSE)
-				SyntaxError2(giToken, TOK_PAREN_CLOSE);
-		} else
-			GetToken();
-
-		return ret;
-	}
-	
-	//! \todo Generalise the function handling into this
-	if( (sym = Symbol_GetLocalVariable(str)) != NULL )
-		node = AST_NewLocalVar( sym );
-	else
-		node = AST_NewSymbol( Symbol_ResolveSymbol(str), str );
-	
-	if( LookAhead() == TOK_SQUARE_OPEN ) {
-		GetToken();
-		node = AST_NewArrayIndex( node, DoExpr0() );
-		GetToken();
-		if(giToken != TOK_SQUARE_CLOSE)
-			SyntaxError2(giToken, TOK_SQUARE_CLOSE);
-		return node;
-	}
-	else
-		return node;
-}
-
-/**
- * \brief int GetReservedWord()
- * \brief Gets a symbolic representation of a reserved word
- */
-int GetReservedWord()
-{
-	 int	ret = 0;
-	char	*tok = strndup( gsTokenStart, giTokenLength );
-	if(strcmp("if", tok) == 0)
-		ret = RWORD_IF;
-	else if(strcmp("else", tok) == 0)
-		ret = RWORD_ELSE;
-	else if(strcmp("for", tok) == 0)
-		ret = RWORD_FOR;
-	else if(strcmp("while", tok) == 0)
-		ret = RWORD_WHILE;
-	else if(strcmp("do", tok) == 0)
-		ret = RWORD_DO;
-
-	else if(strcmp("return", tok) == 0)
-		ret = RWORD_RETURN;
-	else if(strcmp("continue", tok) == 0)
-		ret = RWORD_CONTINUE;
-	else if(strcmp("break", tok) == 0)
-		ret = RWORD_BREAK;
-
-	free(tok);
-	return ret;
-}

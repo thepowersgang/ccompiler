@@ -6,34 +6,25 @@
 #include <global.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 // == Imported Functions ===
 extern void	DoStatement(void);
 extern void	GetDefinition(void);
 extern void	InitialiseAST(void);
 extern void	InitialiseData(void);
-extern void Symbol_DumpTree(void);
+extern void	Symbol_DumpTree(void);
 extern void	Optimiser_ProcessTree(void);
-extern int	SetOutputArch(char *Name);
-extern void	GenerateOutput(char *File);
+extern int	SetOutputArch(const char *Name);
+extern void	GenerateOutput(const char *File);
 
 // Parser Variables
-char	*gsNextChar = NULL;
- int	giToken = 0;
-char	*gsTokenStart = NULL;
- int	giTokenLength = 0;
- int	giLine = 1;
- int	giStatement = 1;
- int	giInputLength = 0;
-char	*gsCurFile = NULL;
-char	*gsInputData = NULL;
+const char	*gsInputFile = NULL;
+const char	*gsOutputFile = "out.asm";
+const char	*gsOutputArch;
 
-char	*gsInputFile = NULL;
-char	*gsOutputFile = "out.asm";
-char	*gsOutputArch;
-
-void ParseCommandLine(int argc, char *argv[]);
-void PrintSyntax(char *exename);
+int ParseCommandLine(int argc, char *argv[]);
+void PrintUsage(const char *exename);
 
 // === CODE ===
 /**
@@ -42,9 +33,8 @@ void PrintSyntax(char *exename);
  */
 int main(int argc, char *argv[])
 {
-	 int	tok;
-
-	ParseCommandLine(argc, argv);
+	if( ParseCommandLine(argc, argv) )
+		return 1;
 
 	if( gsOutputArch )
 	{
@@ -54,35 +44,28 @@ int main(int argc, char *argv[])
 
 	InitialiseData();
 
-	gsNextChar = gsInputData;
 
-	while( (tok = LookAhead()) != TOK_EOF )
-	{
-		switch(tok)
-		{
-		#if 0
-		// Reserved Word
-		case TOK_RSVDWORD:
-			GetToken();
-			tok = GetReservedWord();
-			switch(tok)
-			{
-			//case RWORD_STRUCT:
-			//	break;
-			default:
-				SyntaxError("Unexpected reserved word");
-				break;
-			}
-			break;
-		#endif
-
-		// Type Definition
-		case TOK_IDENT:	GetDefinition();	break;
-
-		default:
-			SyntaxError2(tok, TOK_IDENT);
-		}
+	FILE *infile = fopen(gsInputFile, "r");
+	if(!infile)	{
+		fprintf(stderr, "Unable to open file '%s'\n", gsInputFile);
+		exit(1);
 	}
+
+	fseek(infile, 0, SEEK_END);
+	size_t len = ftell(infile);
+	fseek(infile, 0, SEEK_SET);
+	
+	char *file_data = malloc(len+1);
+	fread(file_data, 1, len, infile);
+	file_data[len] = 0;
+	fclose(infile);
+
+	tParser parser = {
+		.BufferBase = file_data,
+		.Cur = {.Pos = file_data, .Filename = gsInputFile, .Line = 1}
+	};
+	
+	Parse_CodeRoot(&parser);
 
 	Symbol_DumpTree();
 
@@ -99,16 +82,25 @@ int main(int argc, char *argv[])
 /**
  * \fn void ParseCommandLine(int argc, char *argv[])
  */
-void ParseCommandLine(int argc, char *argv[])
+int ParseCommandLine(int argc, char *argv[])
 {
-	int i = 1, len;
-	FILE	*infile = NULL;
-
-	for( i = 1; i < argc; i ++ )
+	for( int i = 1; i < argc; i ++ )
 	{
-		if(argv[i][0] == '-')
+		const char *arg = argv[i];
+		if(arg[0] != '-')
 		{
-			switch(argv[i][1])
+			// Bare arguments
+			if( !gsInputFile )
+				gsInputFile = arg;
+			else {
+				fprintf(stderr, "Extra file passed ('%s')\n", arg);
+				return 1;
+			}
+		}
+		else if(arg[1] != '-')
+		{
+			// Single-char arguments
+			switch(arg[1])
 			{
 			case 'a':
 				gsOutputArch = argv[++i];
@@ -117,43 +109,40 @@ void ParseCommandLine(int argc, char *argv[])
 				gsOutputFile = argv[++i];
 				break;
 			default:
-				fprintf(stderr, "Unknow command line option '-%c'\n", argv[i][1]);
+				fprintf(stderr, "Unknown command line option '-%c'\n", arg[1]);
+				PrintUsage(argv[0]);
+				return 1;
 			case 'h':
-				PrintSyntax(argv[0]);
+				PrintUsage(argv[0]);
 				exit(0);
-
+				break;
 			}
-		} else {
-			gsInputFile = argv[i];
+		}
+		else {
+			// Long arguments
+			if( strcmp(arg, "--help") == 0 ) {
+				PrintUsage(argv[0]);
+				exit(0);
+			}
+			else
+			{
+				fprintf(stderr, "Unknown command line option '%s'\n", arg);
+				PrintUsage(argv[0]);
+				return 1;
+			}
 		}
 	}
 
 	if(!gsInputFile)
 	{
 		fprintf(stderr, "An input filename is required.\n");
-		exit(-1);
+		return -1;
 	}
-
-	infile = fopen(gsInputFile, "r");
-	if(!infile)	{
-		fprintf(stderr, "Unable to open file '%s'\n", gsInputFile);
-		exit(-1);
-	}
-
-	fseek(infile, 0, SEEK_END);
-	giInputLength = len = ftell(infile);
-	fseek(infile, 0, SEEK_SET);
-
-	gsCurFile = gsInputFile;
-
-	gsInputData = malloc(len+1);
-	fread(gsInputData, 1, len, infile);
-	gsInputData[len] = 0;
-
-	fclose(infile);
+	
+	return 0;
 }
 
-void PrintSyntax(char *exename)
+void PrintUsage(const char *exename)
 {
 	fprintf(stderr, 
 		"Usage: %s [-o <output file>] <input file>\n"

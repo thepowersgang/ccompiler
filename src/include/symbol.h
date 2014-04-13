@@ -34,23 +34,50 @@ enum eSymbolClasses
 	NUM_SYMCLASSES
 };
 
+enum eTypeClass
+{
+	TYPECLASS_VOID,
+	TYPECLASS_POINTER,
+	TYPECLASS_ARRAY,
+	TYPECLASS_INTEGER,
+	TYPECLASS_REAL,
+	TYPECLASS_STRUCTURE,
+	TYPECLASS_UNION,
+	TYPECLASS_FUNCTION,
+};
+
+enum eIntegerSize
+{
+	INTSIZE_CHAR,
+	INTSIZE_SHORT,
+	INTSIZE_INT,
+	INTSIZE_LONG,
+	INTSIZE_LONGLONG,
+};
+
 // === STRUCTURES ===
 struct sType
 {
-	 int	Type;	// 0: Void, 1: Integer, 2: Structure, 3: Union
-	 int	Linkage;	// 0: Def, 1: Local, 2: External
-	 int	bConst;
-	 int	PtrDepth;
+	 int	ReferenceCount;
+	enum eTypeClass	Class;	
+//	 int	Linkage;	// 0: Def, 1: Local, 2: External
+	bool	bConst;
 	union
 	{
 		struct {
-			 int	bSigned;
-			 int	Bits;
-		}	Integer;
+			bool	bSigned;
+			enum eIntegerSize	Size;
+		} Integer;
 		tStruct	*StructUnion;
+		tType	*Pointer;
+		struct {
+			size_t	Count;
+			tType *Subtype;
+		} Array;
+		// TODO: Function types
+		//tFunctionSig	*Function;
 	};
-	 int	Count;	// Defaults to 1 (array size)
-	size_t	Size;	// Size in words (pointers)
+	//size_t	Size;	// Size in words (pointers)
 };
 
 struct sTypedef

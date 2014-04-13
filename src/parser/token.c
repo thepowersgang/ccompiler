@@ -1,376 +1,430 @@
 /*
- * PHPOS Bytecode Compiler
- * Token Parser
- * TOKEN.C
+ * Acess C Compiler
+ * - 
+ * 
+ * token.c
+ * - Lexer
  */
 #define _TOKEN_C	1
 #include <global.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
+#include <ctype.h>
+#include <stdarg.h>
 
-#define	SUPPORT_CPP	0
-
-#if DEBUG
-# define RET_TOK(tok)	do{giToken=(tok);printf("GetToken: RETURN %s\n",GetTokenStr((tok)));return(tok);}while(0)
+#ifdef DEBUG_ENABLED
+#define DEBUG(str, v...)	printf("DEBUG %s:%i: %s "str"\n", __FILE__, __LINE__, __func__ ,## v );
 #else
-# define RET_TOK(tok)	do{giToken=(tok);return (tok);}while(0)
+#define DEBUG(...)	do{}while(0)
 #endif
 
-// === IMPORTS ===
-extern char	*gsNextChar;
-extern int	giToken;
-extern char	*gsTokenStart;
-extern int	giTokenLength;
-extern int	giLine;
-extern char	*gsCurFile;
-extern int	GetReservedWord();
+// === PROTOTYPES ===
+void	LexerError(tParser *Parser, const char *format, ...);
 
 // === GLOBALS ===
- int	giLastToken = 0;
-char	*giLastStart = NULL;
-char	*giLastEnd = NULL;
- int	giLastLength = 0;
- int	giLastLine = 0;
+const struct sRsvdWord {
+	const char	*String;
+	enum eTokens	Token;
+} caRESERVED_WORDS[] = {
+	{"if", TOK_RWORD_IF},
+	{"else", TOK_RWORD_ELSE},
+	{"for", TOK_RWORD_FOR},
+	{"while", TOK_RWORD_WHILE},
+	{"do", TOK_RWORD_DO},
+	{"return", TOK_RWORD_RETURN},
+	{"continue", TOK_RWORD_CONTINUE},
+	{"break", TOK_RWORD_BREAK},
+	{NULL, 0}
+};
 
 // === CODE ===
-int GetToken()
+int GetToken(tParser *Parser)
 {
-	char*	sStart = gsNextChar;
-	char	ch;
+	// Explicit cast, because we actually munge the string
+	char *pos = (char*)Parser->Cur.Pos;
 
-	giLastToken = giToken;
-	giLastStart = gsTokenStart;
-	giLastEnd = gsNextChar;
-	giLastLength = giTokenLength;
-	giLastLine = giLine;
-
-
-	// Elminate Whitespace
-checkWhitespace:
-	while(is_whitespace(*gsNextChar))
-	{
-		if( (*gsNextChar == '\n' && gsNextChar[-1] != '\r') || *gsNextChar == '\r' )
-			giLine ++;
-		gsNextChar++;
+	// Save state for PutBack
+	Parser->Prev = Parser->Cur;
+	
+	// Check for saved state from PutBack
+	if( Parser->Next.Token != TOK_NULL ) {
+		Parser->Cur = Parser->Next;
+		Parser->Next.Token = TOK_NULL;
+		return Parser->Cur.Token;
 	}
+	
 
-	// Check for EOF
-	if(*gsNextChar == '\0')	{
-		giTokenLength = 0;
-		RET_TOK( TOK_EOF );
-	}
-
-	gsTokenStart = sStart = gsNextChar;
-	giTokenLength = 1;
-	ch = *gsNextChar++;
-	switch(ch)
+	// Elminate Whitespace (and preprocessor stuff)
+	while( isblank(*pos) )
 	{
-	// C Preprocessor Output / Comment
-	case '#':
-		#if SUPPORT_CPP
-		if(*gsNextChar == ' ' && is_num(gsNextChar[1]))
+		if( (*pos == '\n' && pos[-1] != '\r') || *pos == '\r' )
+			Parser->Cur.Line ++;
+		
+		// C preprocessor line annotations
+		if( *pos == '#' )
 		{
-			gsNextChar++;
-			giLine = 0;
-			while(is_num(*gsNextChar)) {
-				giLine *= 10;
-				giLine = *gsNextChar++ - '0';
+			pos ++;
+			if(*pos == ' ' && isdigit(pos[1]))
+			{
+				pos ++;
+				Parser->Cur.Line = strtol(pos, &pos, 10);
+				// Check that there's a string afterwards
+				if(pos[0] != ' ' || pos[1] != '"')
+					goto doPPComment;
+				// Eat ' '  and "
+				pos += 2;
+				Parser->Cur.Filename = pos;
+				while(*pos && *pos != '"')	pos ++;
+				// HACK: Mutilate source string  (it doesn't matter because it's in a comment)
+				*pos = '\0';
+				pos ++;
+				DEBUG("Set '%s':%i", Parser->Cur.Filename, Parser->Cur.Line);
 			}
-			// NOT Trailed by a string
-			if(*gsNextChar != ' ' || gsNextChar[1] != '"')		goto doPPComment;
-			// Eat ' '  and "
-			gsNextChar++;	gsNextChar++;
-			gsCurFile = gsNextChar;
-			while(*gsNextChar != '"')
-				gsNextChar ++;
-			// HACK: Mutilate source string  (it doesn't matter because it's in a comment)
-			*gsNextChar = '\0';
-			gsNextChar ++;
-			printf("Set '%s':%i\n", gsCurFile, giLine);
+		doPPComment:
+			while(*pos != '\r' && *pos != '\n')	pos++;
+			pos ++;
 		}
-doPPComment:
-		#endif
-		while(*gsNextChar != '\r' && *gsNextChar != '\n')	gsNextChar++;
-		goto checkWhitespace;
-
+		
+		// NOTE: These should be eliminated by the preprocessor, but just in case
+		if( *pos == '/' && pos[1] == '/' )
+		{
+			pos += 2;
+			// Line comment
+			while( *pos && *pos != '\n' && *pos != '\r' )
+				pos ++;
+		}
+		
+		if( pos[0] == '/' && pos[1] == '*' )
+		{
+			pos += 2;
+			// Block comment
+			while( *pos && !(pos[0] == '*' && pos[1] == '/') )
+			{
+				// Detect newlines
+				// - Ignore '\r' if it's part of '\r\n'
+				// - handle '\n'
+				if( (pos[0] == '\r' && pos[1] != '\n') || *pos == '\n' )
+					Parser->Cur.Line ++;
+				pos ++;
+			}
+		}
+	}
+	
+	enum eTokens	token;
+	Parser->Cur.TokenStart = pos;
+	Parser->Cur.TokenLen = 1;
+	switch(*pos++)
+	{
+	// Check for EOF
+	case '\0':
+		token = TOK_EOF;
+		break;
 	// Divide/Comments
 	case '/':
-		switch(*gsNextChar)
+		switch(*pos)
 		{
-		case '/':	// LINE COMMENT
-			while(*gsNextChar != '\r' && *gsNextChar != '\n')	gsNextChar++;
-			goto checkWhitespace;
-
-		case '*':	// BLOCK COMMENT
-			gsNextChar++;
-			while( !(gsNextChar[0] == '*' && gsNextChar[1] == '/') ) {
-				if( (*gsNextChar == '\n' && gsNextChar[-1] != '\r') || *gsNextChar == '\r' )
-					giLine ++;
-				gsNextChar++;
-			}
-			gsNextChar ++;
-			gsNextChar ++;
-			goto checkWhitespace;
-
 		case '=':	// Divide Equal
-			RET_TOK( TOK_DIV_EQU );
-
+			pos ++;
+			token = TOK_DIV_EQU;
+			break;
 		default:
-			RET_TOK( TOK_DIVIDE );
+			token = TOK_DIVIDE;
+			break;
 		}
 		break;
 
 	// Question Mark
-	case '?':	RET_TOK( TOK_QMARK );
+	case '?':
+		token = TOK_QMARK;
+		break;
 
 	// Equals
 	case '=':
-		if(*gsNextChar == '=')	// Compare Equals
-		{
-			gsNextChar++;
-			RET_TOK( TOK_CMPEQU );
+		// Compare Equals?
+		if(*pos == '=') {
+			pos ++;
+			token = TOK_CMPEQU;
 		}
-		RET_TOK( TOK_ASSIGNEQU );
-
+		else {
+			token = TOK_ASSIGNEQU;
+		}
+		break;
 	// Multiply
 	case '*':
-		if(*gsNextChar == '=')	// Times-Equals
+		if(*pos == '=')	// Times-Equals
 		{
-			gsNextChar++;
-			RET_TOK( TOK_MULT_EQU );
+			pos++;
+			token = TOK_MULT_EQU;
 		}
-		RET_TOK( TOK_ASTERISK );
-
+		else
+			token = TOK_ASTERISK;
+		break;
 	// Plus
 	case '+':
-		if(*gsNextChar == '=')	// Plus-Equals
+		if(*pos == '=')	// Plus-Equals
 		{
-			gsNextChar++;
-			RET_TOK( TOK_PLUS_EQU );
+			pos ++;
+			token = TOK_PLUS_EQU;
 		}
-		if(*gsNextChar == '+')	// Increment
+		else if(*pos == '+')	// Increment
 		{
-			gsNextChar++;
-			RET_TOK( TOK_INC );
+			pos ++;
+			token = TOK_INC;
 		}
-		RET_TOK( TOK_PLUS );
+		else
+		{
+			token = TOK_PLUS;
+		}
+		break;
 
 	// Minus
 	case '-':
-		if(*gsNextChar == '=')	// Minus-Equals
+		switch(*pos++)
 		{
-			gsNextChar++;
-			RET_TOK( TOK_MINUS_EQU );
+		case '|':	// Assignment Subtract
+			token = TOK_MINUS_EQU;
+			break;
+		case '>':	// Pointer member
+			token = TOK_MEMBER;
+			break;
+		case '-':	// Decrement
+			token = TOK_DEC;
+			break;
+		default:
+			pos --;
+			token = TOK_MINUS;
+			break;
 		}
-		if(*gsNextChar == '>')	// Member of
-		{
-			gsNextChar++;
-			RET_TOK( TOK_MEMBER );
-		}
-		if(*gsNextChar == '-')	// Increment
-		{
-			gsNextChar++;
-			RET_TOK( TOK_DEC );
-		}
-		RET_TOK( TOK_MINUS );
+		break;
 
 	// OR
 	case '|':
-		if(*gsNextChar == '|')	// Boolean OR
+		switch(*pos++)
 		{
-			gsNextChar++;
-			return (giToken = TOK_LOGICOR);
+		case '|':	// Boolean OR
+			token = TOK_LOGICOR;
+			break;
+		case '=':	// OR-Equals
+			token = TOK_OR_EQU;
+			break;
+		default:
+			pos --;
+			token = TOK_OR;
+			break;
 		}
-		if(*gsNextChar == '=')	// OR-Equals
-		{
-			gsNextChar++;
-			RET_TOK( TOK_OR_EQU );
-		}
-		RET_TOK( TOK_OR );
+		break;
 
 	// XOR
 	case '^':
-		if(*gsNextChar == '=')	// XOR-Equals
+		if(*pos == '=')	// XOR-Equals
 		{
-			gsNextChar++;
-			RET_TOK( TOK_XOR_EQU );
+			pos++;
+			token = TOK_XOR_EQU;
 		}
-		RET_TOK( TOK_XOR );
+		else
+		{
+			token = TOK_XOR;
+		}
+		break;
 
 	// AND/Address/Reference
 	case '&':
-		if(*gsNextChar == '&')	// Boolean AND
+		switch(*pos++)
 		{
-			gsNextChar++;
-			RET_TOK( TOK_LOGICAND );
+		case '&':	// Boolean AND
+			token = TOK_LOGICAND;
+			break;
+		case '=':	// Bitwise Assignment AND
+			token = TOK_AND_EQU;
+			break;
+		default:	// Bitwise AND / Address-of
+			pos --;
+			token = TOK_AMP;
+			break;
 		}
-		if(*gsNextChar == '=')	// AND-Equals
-		{
-			gsNextChar++;
-			RET_TOK( TOK_AND_EQU );
-		}
-		RET_TOK( TOK_AMP );
+		break;
 
 	// Bitwise NOT
-	case '~':	RET_TOK( TOK_NOT );
+	case '~':
+		token = TOK_NOT;
+		break;
 	// Boolean NOT
-	case '!':	RET_TOK( TOK_LOGICNOT );
+	case '!':
+		token = TOK_LOGICNOT;
+		break;
 
 	// String
 	case '"':
-		gsTokenStart = gsNextChar;
-		while( !(gsNextChar[0] == '"' && gsNextChar[-1] != '\\') && *gsNextChar != 0 )	// Read String
-			gsNextChar ++;
-		if(*gsNextChar == 0)
-			ParseError("Unexpected EOF in string");
-		giTokenLength = gsNextChar - gsTokenStart;
-		gsNextChar ++;	// Eat last Quote
-		RET_TOK( TOK_STR );
-
+		while( !(pos[0] == '"' && pos[-1] != '\\') && *pos != 0 )	// Read String
+			pos ++;
+		if(*pos == '\0')
+			LexerError(Parser, "Unexpected EOF in string");
+		pos ++;	// Eat last Quote
+		token = TOK_STR;
+		break;
 	// Character
 	case '\'':
-		gsTokenStart = gsNextChar;
-		while( !(gsNextChar[0] == '\'' && gsNextChar[-1] != '\\') && *gsNextChar != 0 )	// Read String
-			gsNextChar ++;
-		if(*gsNextChar == 0)
-			ParseError("Unexpected EOF in character constant");
-		giTokenLength = gsNextChar - gsTokenStart;
-		gsNextChar ++;	// Eat last Quote
-		RET_TOK( TOK_CHAR );
-
+		while( !(pos[0] == '\'' && pos[-1] != '\\') && *pos != 0 )	// Read String
+			pos ++;
+		if(*pos == '\0')
+			LexerError(Parser, "Unexpected EOF in character constant");
+		pos ++;	// Eat last Quote
+		token = TOK_CHAR;
+		break;
 	// LT / Shift Left
 	case '<':
-		if(*gsNextChar == '<') {
-			gsNextChar++;
-			RET_TOK( TOK_SHL );
+		if(*pos == '<') {
+			pos ++;
+			token = TOK_SHL;
 		}
-		RET_TOK( TOK_LT );
+		else {
+			token = TOK_LT;
+		}
+		break;
 	// GT / Shift Right
 	case '>':
-		if(*gsNextChar == '>') {
-			gsNextChar++;
-			RET_TOK( TOK_SHR );
+		if(*pos == '>') {
+			pos ++;
+			token = TOK_SHR;
 		}
-		RET_TOK( TOK_GT );
-
+		else {
+			token = TOK_GT;
+		}
+		break;
 	// End of Statement (Semicolon)
-	case ';':	RET_TOK( TOK_SEMICOLON );
-
+	case ';':
+		token = TOK_SEMICOLON;
+		break;
 	// Comma
-	case ',':	RET_TOK( TOK_COMMA );
-
-	// Scope / Label
+	case ',':
+		token = TOK_COMMA;
+		break;
+	// Scope (C++) / Label
 	case ':':
-		if( *gsNextChar == ':' )
-		{
-			gsNextChar++;
-			RET_TOK( TOK_SCOPE );
+		if( *pos == ':' ) {
+			pos ++;
+			token = TOK_SCOPE;
 		}
-		RET_TOK( TOK_COLON );
-	
+		else {
+			token = TOK_COLON;
+		}
+		break;
+	// Direct member / ...
 	case '.':
-		if( *gsNextChar == '.' && gsNextChar[1] == '.' )
+		if( *pos == '.' && pos[1] == '.' )
 		{
-			gsNextChar += 2;
-				RET_TOK( TOK_VAARG );
+			pos += 2;
+			token =  TOK_VAARG;
 		}
-		RET_TOK( TOK_DOT );
-
-	// Namespace Separator
-	case '\\':	RET_TOK( TOK_SLASH );
-
+		else {
+			token = TOK_DOT;
+		}
+		break;
 	// Braces
-	case '{':	RET_TOK( TOK_BRACE_OPEN );
-	case '}':	RET_TOK( TOK_BRACE_CLOSE );
+	case '{':	token = TOK_BRACE_OPEN;	break;
+	case '}':	token = TOK_BRACE_CLOSE;	break;
 	// Parens
-	case '(':	RET_TOK( TOK_PAREN_OPEN );
-	case ')':	RET_TOK( TOK_PAREN_CLOSE );
+	case '(':	token = TOK_PAREN_OPEN;	break;
+	case ')':	token = TOK_PAREN_CLOSE;	break;
 	// Brackets
-	case '[':	RET_TOK( TOK_SQUARE_OPEN );
-	case ']':	RET_TOK( TOK_SQUARE_CLOSE );
-	}
-
-	// Numbers
-	if(is_num(ch))
-	{
-		gsTokenStart = sStart;
-		if(ch == '0' && *gsNextChar == 'x') {
-			gsNextChar ++;
-			while(is_hex(*gsNextChar))
-				gsNextChar++;
-		} else {
-			while( is_num(*gsNextChar) )
-				gsNextChar++;
-		}
-		giTokenLength = gsNextChar - sStart;
-		RET_TOK( TOK_CONST_NUM );
-	}
-
-	// Identifier
-	if(is_ident(ch))
-	{
-		 int	rword;
-		while(is_ident(*gsNextChar))
-			gsNextChar ++;
-		giTokenLength = gsNextChar - sStart;
-
-		#if DEBUG
-		{
-		char	*tmp = strndup(gsTokenStart,giTokenLength);
-		printf(" GetToken: ident/rsvdwd = '%s'\n", tmp);
-		free(tmp);
-		}
-		#endif
+	case '[':	token = TOK_SQUARE_OPEN;	break;
+	case ']':	token = TOK_SQUARE_CLOSE;	break;
 	
-		rword = GetReservedWord();
-		#if DEBUG
-		printf(" GetToken: rword = %i\n", rword);
-		#endif
-		if(rword > 0)
-			RET_TOK( TOK_RSVDWORD );
-		else
-			RET_TOK( TOK_IDENT );
+	// Numbers
+	case '0':
+		if( *pos == 'x' ) {
+			// Hex
+			pos ++;
+			while( isxdigit(*pos) )
+				pos ++;
+			// TODO: Float
+		}
+		else {
+			// Octal
+			while( '0' <= *pos && *pos <= '7' )
+				pos ++;
+			// TODO: Float
+		}
+		token = TOK_CONST_NUM;
+		break;
+	case '1' ... '9':
+		// Decimal / float
+		while( isdigit(*pos) )
+			pos ++;
+		// TODO: Float
+		token = TOK_CONST_NUM;
+		break;
+	
+	// Generic (identifiers)
+	default:
+		// Identifier
+		if(is_ident(pos[-1]))
+		{
+			while(is_ident(*pos))
+				pos ++;
+			Parser->Cur.TokenLen = pos - Parser->Cur.TokenStart;
+
+			DEBUG("ident/rsvdwd = '%.*s'", Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+	
+			// Check for reserved words	
+			token = TOK_IDENT;
+			for( int i = 0; i < sizeof(caRESERVED_WORDS)/sizeof(caRESERVED_WORDS[0]); i ++ ) {
+				const struct sRsvdWord *rwd = &caRESERVED_WORDS[i];
+				if( Parser->Cur.TokenLen != strlen(rwd->String) )
+					continue ;
+				if( strncmp(Parser->Cur.TokenStart, rwd->String, strlen(rwd->String)) != 0 )
+					continue ;
+				token = rwd->Token;
+				break;
+			}
+		}
+		else {
+			fprintf(stderr, "Unknown symbol '%c' (0x%x)\n", pos[-1], pos[-1]);
+			token = TOK_NULL;
+		}
+		break;
 	}
-
-	fprintf(stderr, "Unknown symbol '%c' (0x%x)\n", ch, ch);
-	ParseError("Unknown symbol");
-	return 0;
+	
+	Parser->Cur.TokenLen = pos - Parser->Cur.TokenStart;
+	printf("GetToken - %s '%.*s'\n",
+		csaTOKEN_NAMES[token], (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+	Parser->Cur.Token = token;
+	Parser->Cur.Pos = pos;
+	return token;
 }
 
-void PutBack()
+void PutBack(tParser *Parser)
 {
-	giToken = giLastToken;
-	gsTokenStart = giLastStart;
-	gsNextChar = giLastEnd;
-	giTokenLength = giLastLength;
-	giLine = giLastLine;
+	if( Parser->Prev.Token == TOK_NULL ) {
+		assert( Parser->Prev.Token != TOK_NULL && "PutBack" );
+	}
+	Parser->Next = Parser->Cur;
+	Parser->Cur = Parser->Prev;
+	Parser->Prev.Token = TOK_NULL;
 }
 
-int LookAhead()
+int LookAhead(tParser *Parser)
 {
-	 int	newToken;
-	 int	oldToken = giToken;
-	 int	oldLength = giTokenLength;
-	 int	oldLine = giLine;
-	char	*oldStart = gsTokenStart;
-	char	*oldEnd = gsNextChar;
-
-	#if DEBUG
-	printf("LookAhead: ()\n");
-	#endif
-
-	newToken = GetToken();
-
-	giToken = oldToken;
-	giTokenLength = oldLength;
-	giLine = oldLine;
-	gsTokenStart = oldStart;
-	gsNextChar = oldEnd;
-
-	return newToken;
+	if( Parser->Next.Token == TOK_NULL ) {
+		GetToken(Parser);
+		PutBack(Parser);
+	}
+	return Parser->Next.Token;
 }
 
-char *GetTokenStr(int ID)
+const char *GetTokenStr(enum eTokens ID)
 {
 	return (char*)csaTOKEN_NAMES[ID];
+}
+
+void LexerError(tParser *Parser, const char *format, ...)
+{
+	va_list	args;
+	va_start(args, format);
+	fprintf(stderr, "error:%s:%i: lex - ", Parser->Cur.Filename, Parser->Cur.Line);
+	vfprintf(stderr, format, args);
+	va_end(args);
+	fprintf(stderr, "\n");
+	//longjmp(Parser->ErrorTarget);
 }

@@ -18,14 +18,14 @@ for( $i = 1; $i < count($lines); $i++ )
 
 echo "/* *******************\n";
 echo "   Enum & Lookup Array\n";
-echo "   $enumName\n";
+echo "   $lEnumName\n";
 echo "   ******************/\n";
 echo "\n";
 echo "#ifndef _",strtoupper($lEnumName),"_ENUM_H\n";
 echo "#define _",strtoupper($lEnumName),"_ENUM_H\n";
 echo "\n";
 
-echo "enum {$enumName} {\n";
+echo "enum {$lEnumName} {\n";
 foreach($lEnumValues as $ident)
 {
 	echo "\t",$ident,",\n";

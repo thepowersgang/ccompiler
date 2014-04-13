@@ -8,40 +8,23 @@ PARSER.H
 
 #include <global.h>
 
-extern int	is_whitespace(char c);
-extern int	is_num(char c);
-extern int	is_hex(char c);
-extern int	is_ident(char c);
-extern void	ParseError(char *reason);
-extern void	ParseError2(int token, int expected);
-extern void SyntaxError(char *reason);
-extern void	SyntaxError2(int token, int expected);
-extern void	SyntaxError3(int Token, ...);
-extern void SyntaxAssert(int tok, int expected);
-extern void	SyntaxErrorF(const char *reason, ...);
-extern void	FatalError(char *reason);
-extern int	GetToken();
-extern void	PutBack();
-extern int	LookAhead();
+typedef struct sParser	tParser;
 
-extern char *GetTokenStr(int ID);
+extern void	Parse_CodeRoot(tParser *Parser);
 
-#include "eTokens.enum.h"
+#include "lex.h"
 
-enum eReservedWords {
-	RWORD_NULL,
-
-	RWORD_RETURN,
-	RWORD_CONTINUE,
-	RWORD_BREAK,
-
-	RWORD_FOR,
-	RWORD_DO,
-	RWORD_WHILE,
-	RWORD_IF,
-	RWORD_ELSE,
-
-	RWORD_LAST
+struct sParser
+{
+	const char	*BufferBase;
+	struct {
+		const char	*Pos;
+		const char *Filename;
+		 int	Line;
+		enum eTokens	Token;
+		const char	*TokenStart;
+		size_t	TokenLen;
+	} Cur, Prev, Next;
 };
 
 #endif
