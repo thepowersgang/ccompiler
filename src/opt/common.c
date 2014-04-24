@@ -39,48 +39,43 @@ void Optimiser_ProcessTree(void)
  */
 tAST_Node *Optimiser_StaticOpt(tAST_Node *Node)
 {
-	tAST_Node	*tmp;
-	tmp = Optimiser_ProcessNode(Opt1_Optimise, Node);
-	if(tmp != Node) {
-		AST_DeleteNode(Node);
-	}
-	return tmp;
+	return Optimiser_ProcessNode(Opt1_Optimise, Node);
 }
 
 void Optimiser_DoPass(tOptimiseCallback *Callback)
 {
-	tAST_Node	*tmp;
-	tFunction	*fcn;
-	for(fcn = gpFunctions;
-		fcn;
-		fcn = fcn->Next)
+	for(tFunction *fcn = gpFunctions; fcn; fcn = fcn->Next)
 	{
-		if( fcn->Code == NULL )
+		if( fcn->Sym.Value == NULL )
 			continue;
 		DEBUG1("Optimising %s()\n", fcn->Name);
-		tmp = Optimiser_ProcessNode(Callback, fcn->Code);
-		if(tmp != fcn->Code) {
-			AST_DeleteNode(fcn->Code);
-			fcn->Code = tmp;
-		}
+		fcn->Sym.Value = Optimiser_ProcessNode(Callback, fcn->Sym.Value);
 	}
 }
 
 //! \note Undef'd at end of function
 #define REPLACE(v)	do{\
-	tAST_Node	*new = Optimiser_ProcessNode(Callback, (v));\
-	DEBUG2("%p[%03x] ", (v),(v)->Type);\
-	if(new != (v)) {\
-		DEBUG2("changed (now %p[%03x])\n", new,new->Type);\
-		free((v)); (v) = new;\
-	}\
-	DEBUG2("no change\n");\
+	(v) = Optimiser_ProcessNode(Callback, (v));\
 	}while(0)
+
+void Optimiser_ProcessNodeList(tOptimiseCallback *Callback, tAST_Node **FirstPtr)
+{
+	for(tAST_Node *tmp = *FirstPtr, *prev = NULL; tmp; prev = tmp)
+	{
+		tAST_Node *new = Optimiser_ProcessNode(Callback, tmp);
+		if(new != tmp)
+		{
+			if(prev)
+				prev->NextSibling = new;
+			else
+				*FirstPtr = new;
+		}
+		tmp = new->NextSibling;
+	}
+}
 
 tAST_Node *Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node)
 {
-	tAST_Node	*tmp, *prev, *new;
-	
 	switch(Node->Type & 0xF00)
 	{
 	// Leaves are ignored
@@ -90,46 +85,13 @@ tAST_Node *Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node)
 		switch(Node->Type)
 		{
 		case NODETYPE_BLOCK:
-			for(tmp = Node->CodeBlock.FirstStatement;
-				tmp;
-				prev = tmp)
-			{
-				tAST_Node	*new;
-				new = Optimiser_ProcessNode(Callback, tmp);
-				if(new != tmp) {
-					if(prev)
-						prev->NextSibling = new;
-					else
-						Node->CodeBlock.FirstStatement = new;
-					new->NextSibling = tmp->NextSibling;
-					free(tmp);
-					tmp = new->NextSibling;
-				}
-				else
-					tmp = tmp->NextSibling;
-			}
+			Optimiser_ProcessNodeList(Callback, &Node->CodeBlock.FirstStatement);
 			break;
 		
 		case NODETYPE_FUNCTIONCALL:
 			REPLACE( Node->FunctionCall.Function );
 			
-			for(tmp = Node->FunctionCall.FirstArgument;
-				tmp;
-				prev = tmp)
-			{
-				new = Optimiser_ProcessNode(Callback, tmp);
-				if(new != tmp) {
-					if(prev)
-						prev->NextSibling = new;
-					else
-						Node->FunctionCall.FirstArgument = new;
-					new->NextSibling = tmp->NextSibling;
-					free(tmp);
-					tmp = new->NextSibling;
-				}
-				else
-					tmp = tmp->NextSibling;
-			}
+			Optimiser_ProcessNodeList(Callback, &Node->FunctionCall.FirstArgument);
 			break;
 		}
 		break;
@@ -176,7 +138,11 @@ tAST_Node *Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node)
 		break;
 	}
 	DEBUG3("Node %p type 0x%x - Processing using %p\n", Node, Node->Type, Callback);
-	return Callback(Node);
+	tAST_Node *ret = Callback(Node);
+	if(ret != Node) {
+		free(Node);
+	}
+	return ret;
 }
 #undef REPLACE
 

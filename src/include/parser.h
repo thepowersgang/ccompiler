@@ -27,4 +27,9 @@ struct sParser
 	} Cur, Prev, Next;
 };
 
+extern void	SyntaxError_T(tParser *Parser, enum eTokens Tok, const char *reason, ...);
+extern void	SyntaxError(tParser *Parser, const char *reason, ...);
+extern void	SyntaxAssert(tParser *Parser, enum eTokens tok, enum eTokens expected);
+extern void	LexerError(tParser *Parser, const char *reason, ...);
+
 #endif

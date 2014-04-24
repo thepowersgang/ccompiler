@@ -6,12 +6,15 @@
  * - Lexer
  */
 #define _TOKEN_C	1
+#define DEBUG_ENABLED
 #include <global.h>
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <parser.h>
 
 #ifdef DEBUG_ENABLED
 #define DEBUG(str, v...)	printf("DEBUG %s:%i: %s "str"\n", __FILE__, __LINE__, __func__ ,## v );
@@ -20,7 +23,7 @@
 #endif
 
 // === PROTOTYPES ===
-void	LexerError(tParser *Parser, const char *format, ...);
+bool	is_ident(char ch);
 
 // === GLOBALS ===
 const struct sRsvdWord {
@@ -35,11 +38,28 @@ const struct sRsvdWord {
 	{"return", TOK_RWORD_RETURN},
 	{"continue", TOK_RWORD_CONTINUE},
 	{"break", TOK_RWORD_BREAK},
-	{NULL, 0}
+
+	// Types
+	{"void", TOK_RWORD_VOID},
+	{"char",  TOK_RWORD_CHAR},
+	{"short", TOK_RWORD_SHORT},
+	{"int",   TOK_RWORD_INT},
+	{"long",  TOK_RWORD_LONG},
+	{"float",  TOK_RWORD_FLOAT},
+	{"double", TOK_RWORD_DOUBLE},
+	{"signed",   TOK_RWORD_SIGNED},
+	{"unsigned", TOK_RWORD_UNSIGNED},
+	{"_Bool",    TOK_RWORD_BOOL},
+	{"_Complex", TOK_RWORD_COMPLEX},
+	// Linkage
+	{"extern", TOK_RWORD_EXTERN},
+	{"static", TOK_RWORD_STATIC},
+	{"inline", TOK_RWORD_INLINE},
+	{"register", TOK_RWORD_REGISTER},
 };
 
 // === CODE ===
-int GetToken(tParser *Parser)
+enum eTokens GetToken(tParser *Parser)
 {
 	// Explicit cast, because we actually munge the string
 	char *pos = (char*)Parser->Cur.Pos;
@@ -51,15 +71,18 @@ int GetToken(tParser *Parser)
 	if( Parser->Next.Token != TOK_NULL ) {
 		Parser->Cur = Parser->Next;
 		Parser->Next.Token = TOK_NULL;
+		DEBUG("Fast ret %s", csaTOKEN_NAMES[Parser->Cur.Token]);
 		return Parser->Cur.Token;
 	}
 	
 
 	// Elminate Whitespace (and preprocessor stuff)
-	while( isblank(*pos) )
+	for( ; isspace(*pos) || pos[0] == '#' || (pos[0] == '/' && (pos[1] == '/' || pos[1] == '*')); pos ++ )
 	{
-		if( (*pos == '\n' && pos[-1] != '\r') || *pos == '\r' )
+		if( (*pos == '\n' && pos[-1] != '\r') || *pos == '\r' ) {
+			DEBUG("newline");
 			Parser->Cur.Line ++;
+		}
 		
 		// C preprocessor line annotations
 		if( *pos == '#' )
@@ -82,14 +105,15 @@ int GetToken(tParser *Parser)
 				DEBUG("Set '%s':%i", Parser->Cur.Filename, Parser->Cur.Line);
 			}
 		doPPComment:
-			while(*pos != '\r' && *pos != '\n')	pos++;
-			pos ++;
+			while( *pos && *pos != '\r' && *pos != '\n')
+				pos++;
 		}
 		
 		// NOTE: These should be eliminated by the preprocessor, but just in case
 		if( *pos == '/' && pos[1] == '/' )
 		{
 			pos += 2;
+			DEBUG("C++ comment");
 			// Line comment
 			while( *pos && *pos != '\n' && *pos != '\r' )
 				pos ++;
@@ -98,6 +122,7 @@ int GetToken(tParser *Parser)
 		if( pos[0] == '/' && pos[1] == '*' )
 		{
 			pos += 2;
+			DEBUG("C comment");
 			// Block comment
 			while( *pos && !(pos[0] == '*' && pos[1] == '/') )
 			{
@@ -108,6 +133,8 @@ int GetToken(tParser *Parser)
 					Parser->Cur.Line ++;
 				pos ++;
 			}
+			if( *pos )
+				pos += 2-1;
 		}
 	}
 	
@@ -365,7 +392,7 @@ int GetToken(tParser *Parser)
 				pos ++;
 			Parser->Cur.TokenLen = pos - Parser->Cur.TokenStart;
 
-			DEBUG("ident/rsvdwd = '%.*s'", Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+			DEBUG("ident/rsvdwd = '%.*s'", (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
 	
 			// Check for reserved words	
 			token = TOK_IDENT;
@@ -387,8 +414,7 @@ int GetToken(tParser *Parser)
 	}
 	
 	Parser->Cur.TokenLen = pos - Parser->Cur.TokenStart;
-	printf("GetToken - %s '%.*s'\n",
-		csaTOKEN_NAMES[token], (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+	DEBUG("%s '%.*s'", csaTOKEN_NAMES[token], (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
 	Parser->Cur.Token = token;
 	Parser->Cur.Pos = pos;
 	return token;
@@ -396,20 +422,21 @@ int GetToken(tParser *Parser)
 
 void PutBack(tParser *Parser)
 {
-	if( Parser->Prev.Token == TOK_NULL ) {
-		assert( Parser->Prev.Token != TOK_NULL && "PutBack" );
-	}
+	assert( Parser->Cur.Token != TOK_NULL );
+	DEBUG("PutBack: %s", csaTOKEN_NAMES[Parser->Cur.Token]);
 	Parser->Next = Parser->Cur;
 	Parser->Cur = Parser->Prev;
 	Parser->Prev.Token = TOK_NULL;
 }
 
-int LookAhead(tParser *Parser)
+enum eTokens LookAhead(tParser *Parser)
 {
 	if( Parser->Next.Token == TOK_NULL ) {
+		DEBUG("LookAhead: --");
 		GetToken(Parser);
 		PutBack(Parser);
 	}
+	DEBUG("LookAhead: %s", csaTOKEN_NAMES[Parser->Next.Token]);
 	return Parser->Next.Token;
 }
 
@@ -418,13 +445,15 @@ const char *GetTokenStr(enum eTokens ID)
 	return (char*)csaTOKEN_NAMES[ID];
 }
 
-void LexerError(tParser *Parser, const char *format, ...)
+bool is_ident(char c)
 {
-	va_list	args;
-	va_start(args, format);
-	fprintf(stderr, "error:%s:%i: lex - ", Parser->Cur.Filename, Parser->Cur.Line);
-	vfprintf(stderr, format, args);
-	va_end(args);
-	fprintf(stderr, "\n");
-	//longjmp(Parser->ErrorTarget);
+	if('0' <= c && c <= '9')
+		return 1;
+	if('a' <= c && c <= 'z')
+		return 1;
+	if('A' <= c && c <= 'Z')
+		return 1;
+	if(c == '_')
+		return 1;
+	return 0;
 }

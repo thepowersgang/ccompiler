@@ -8,10 +8,9 @@
 #include "eTokens.enum.h"
 #include "parser.h"
 
-extern int	is_ident(char c);
-extern int	GetToken(tParser *Parser);
+extern enum eTokens	GetToken(tParser *Parser);
 extern void	PutBack(tParser *Parser);
-extern int	LookAhead(tParser *Parser);
+extern enum eTokens	LookAhead(tParser *Parser);
 
 extern const char	*GetTokenStr(enum eTokens Token);
 

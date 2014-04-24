@@ -55,24 +55,57 @@ enum eIntegerSize
 	INTSIZE_LONGLONG,
 };
 
+enum eFloatSize
+{
+	FLOATSIZE_FLOAT,
+	// TODO: Others?
+	FLOATSIZE_DOUBLE,
+	FLOATSIZE_LONGDOUBLE,
+};
+
+enum eStorageClass
+{
+	STORAGECLASS_NORMAL,
+	STORAGECLASS_REGISTER,
+	STORAGECLASS_STATIC,
+	STORAGECLASS_EXTERN,
+	STORAGECLASS_AUTO,
+};
+
+#define QUALIFIER_CONST   	0x01
+#define QUALIFIER_RESTRICT	0x02
+#define QUALIFIER_VOLATILE	0x04
+
+enum eLinkage
+{
+	LINKAGE_GLOBAL,	// exported global
+	LINKAGE_STATIC,	// unexported global
+	LINKAGE_EXTERNAL,	// imported global (linkage changed if real definition seen)
+};
+
 // === STRUCTURES ===
 struct sType
 {
+	tType	*Next;
 	 int	ReferenceCount;
 	enum eTypeClass	Class;	
-//	 int	Linkage;	// 0: Def, 1: Local, 2: External
 	bool	bConst;
+	bool	bVolatile;
+	bool	bRestrict;
 	union
 	{
 		struct {
 			bool	bSigned;
 			enum eIntegerSize	Size;
 		} Integer;
+		struct {
+			enum eFloatSize	Size;
+		} Real;
 		tStruct	*StructUnion;
-		tType	*Pointer;
+		const tType	*Pointer;
 		struct {
 			size_t	Count;
-			tType *Subtype;
+			tType *Type;
 		} Array;
 		// TODO: Function types
 		//tFunctionSig	*Function;
@@ -82,22 +115,25 @@ struct sType
 
 struct sTypedef
 {
-	char	*Name;
+	tTypedef	*Next;
+	const char	*Name;
 	tType	*Base;
 };
 
 struct sSymbol
 {
 	struct sSymbol	*Next;
-	 int	Class;
-	tType	*Type;
+	enum eLinkage	Linkage;
+	
+	const char	*Name;
+	const tType	*Type;
 	
 	 int	Line;
 
-	 int	Offset;
-	char	*Name;
 	
-	uint64_t	InitialValue;
+	 int	Offset;
+	
+	tAST_Node	*Value;
 };
 
 struct sCodeBlock
@@ -109,14 +145,15 @@ struct sCodeBlock
 struct sFunction
 {
 	struct sFunction	*Next;
+	enum eLinkage	Linkage;
+	
 	 int	Line;
+	
 	tSymbol	Sym;
 	tType	*Return;
-	char	*Name;
 
 	 int	bVaArgs;
 
-	tAST_Node	*Code;
 	tSymbol	*Arguments;
 	 int	CurArgSize;
 };
@@ -124,6 +161,7 @@ struct sFunction
 struct sStruct
 {
 	struct sStruct	*Next;
+	tType	*Type;
 	char	*Name;
 	 int	NumElements;
 	struct {
@@ -140,8 +178,26 @@ extern tSymbol	*gpGlobalSymbols;
 extern void	Symbol_EnterBlock(void);
 extern void	Symbol_LeaveBlock(void);
 
-extern tType	*Symbol_ResolveTypedef(char *Name, int Depth);
-extern tType	*Symbol_CreateIntegralType(int bSigned, int bConst, int Linkage, int Size, int Depth);
+extern tType	*Types_GetTypeFromName(const char *Name, size_t Len);
+
+//! \brief Register a type on the global type list
+extern tType	*Types_Register(const tType *Type);
+//! \brief Create a pointer to the passed type
+extern tType	*Types_CreatePointerType(const tType *Type);
+//! \brief Create a (non-)constant version of the passed type
+extern tType	*Types_ApplyQualifiers(const tType *Type, unsigned int Qualifiers);
+//! \brief Dereference a type
+extern void	Types_DerefType(tType *Type);
+
+//! \brief Get the size of a type in memory
+extern size_t	Types_GetSizeOf(const tType *Type);
+
+extern tType	*Types_CreateVoid(void);
+extern tType	*Types_CreateIntegerType(bool bSigned, enum eIntegerSize Size);
+extern tType	*Types_CreateFloatType(enum eFloatSize Size);
+
+extern int	Types_Compare(const tType *T1, const tType *T2);
+
 extern tType	*Symbol_ParseStruct(char *Name);
 extern tType	*Symbol_GetStruct(char *Name);
 extern tType	*Symbol_ParseUnion(char *Name);
@@ -151,12 +207,14 @@ extern tType	*Symbol_GetEnum(char *Name);
 
 extern tSymbol	*Symbol_GetLocalVariable(char *Name);
 extern tSymbol	*Symbol_ResolveSymbol(char *Name);
+extern  int	Symbol_AddGlobalVariable(const tType *Type, enum eLinkage Linkage, const char *Name, tAST_Node *InitValue);
+
+extern void	Symbol_SetFunction(tFunction *Fcn);
+extern void	Symbol_SetFunctionCode(tFunction *Fcn, void *Block);
+
 extern int	Symbol_GetSymClass(tSymbol *Symbol);
-extern void	Symbol_AddGlobalVariable(tType *Type, char *Name, uint64_t InitValue);
 extern void	*Symbol_GetFunction(tType *Return, char *Name);
 extern void	Symbol_SetFunctionVariableArgs(tFunction *Func);
 extern void	Symbol_SetArgument(tFunction *Func, int ID, tType *Type, char *Name);
-extern void	Symbol_SetFunction(tFunction *Fcn);
-extern void	Symbol_SetFunctionCode(tFunction *Fcn, void *Block);
 
 #endif

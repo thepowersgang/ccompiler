@@ -43,7 +43,7 @@ void	Output_Int_AddReloc(tOutput_Function *Func, int Bits, uint Offset, uint Add
 // === GLOBALS ===
 const tOutputFormat	caOutputFormats[] = {
 	{"X86", X86_GenerateProlouge, X86_GenerateFunction},
-	{"VM16CISC", VM16CISC_GenerateProlouge, VM16CISC_GenerateFunction}
+	//{"VM16CISC", VM16CISC_GenerateProlouge, VM16CISC_GenerateFunction},
 };
 #define NUM_OUTPUT_FORMATS	(sizeof(caOutputFormats)/sizeof(caOutputFormats[0]))
 
@@ -52,8 +52,7 @@ const tOutputFormat	*gpOutputFormat = &caOutputFormats[0];
 // === CODE ===
 int SetOutputArch(char *Name)
 {
-	 int	i;
-	for( i = 0; i < NUM_OUTPUT_FORMATS; i++ )
+	for( int i = 0; i < NUM_OUTPUT_FORMATS; i++ )
 	{
 		if(strcmp(caOutputFormats[i].Name, Name) == 0) {
 			gpOutputFormat = &caOutputFormats[i];
@@ -63,9 +62,10 @@ int SetOutputArch(char *Name)
 	
 	fprintf(stderr, "Unknown output architecture '%s'\n", Name);
 	fprintf(stderr, "Valid architectures: ");
-	for( i = 0; i < NUM_OUTPUT_FORMATS; i++ )
+	for( int i = 0; i < NUM_OUTPUT_FORMATS; i++ )
 	{
-		if(i)	fprintf(stderr, ", ");
+		if( i > 0 )
+			fprintf(stderr, ", ");
 		fprintf(stderr, "%s", caOutputFormats[i].Name);
 	}
 	fprintf(stderr, "\n");
@@ -87,12 +87,9 @@ void GenerateOutput(char *File)
 	//CONCAT(OUTPUT_FORMAT, _GenerateProlouge)(fp);
 	gpOutputFormat->GenProlouge(fp);
 	
-	for(func = gpFunctions;
-		func;
-		func = func->Next
-		)
+	for(func = gpFunctions; func; func = func->Next )
 	{
-		if( func->Code == NULL )
+		if( func->Sym.Value == NULL )
 			continue;
 		
 		//CONCAT(OUTPUT_FORMAT,_GenerateFunction)(fp, func);

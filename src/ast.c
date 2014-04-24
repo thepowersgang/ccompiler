@@ -5,9 +5,6 @@
 #include <ast.h>
 #include <stdio.h>
 
-// === IMPORTS ===
-extern int	giLine;
-
 // === PROTOTYPES ===
 void	AST_DumpTree(tAST_Node *Node, int Depth);
 tAST_Node	*AST_NewNode(int Type);
@@ -142,7 +139,6 @@ tAST_Node *AST_NewNode(int Type)
 	tAST_Node	*ret = malloc(sizeof(tAST_Node));
 	ret->Type = Type;
 	ret->NextSibling = NULL;
-	ret->Line = giLine;
 	return ret;
 }
 

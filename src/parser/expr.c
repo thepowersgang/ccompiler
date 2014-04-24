@@ -7,8 +7,9 @@
  * 
  * expr.c - Token to AST Parser
  */
-#define	DEBUG	0
+#define DEBUG_ENABLED
 #include "global.h"
+#include <parser.h>
 #include <stdio.h>
 #include <strings.h>
 #include <memory.h>
@@ -20,16 +21,22 @@
 // === MACROS ===
 #define CMPTOK(str)	(strlen((str))==giTokenLength&&strncmp((str),gsTokenStart,giTokenLength)==0)
 
+#ifdef DEBUG_ENABLED
+#define DEBUG(str, v...)	printf("DEBUG %s:%i: %s "str"\n", __FILE__, __LINE__, __func__ ,## v );
+#else
+#define DEBUG(...)	do{}while(0)
+#endif
+
 // === IMPORTS ===
 extern tAST_Node	*Optimiser_StaticOpt(tAST_Node *Node);
 
 // === Prototypes ===
 void	Parse_CodeRoot(tParser *Parser);
 tType	*Parse_GetType(tParser *Parser);
- int	Parse_DoDefinition(tParser *Parser, tType *Type);
-tAST_Node	*Parse_DoTopIdent(tParser *Parser, bool NoCode);
+ int	Parse_DoDefinition(tParser *Parser, const tType *Type, tAST_Node *CodeNode);
+ int	Parse_DoDefinition_VarActual(tParser *Parser, const tType *BaseType, tAST_Node *CodeNode);
 tAST_Node	*DoCodeBlock(tParser *Parser);
-tAST_Node	*DoStatement(tParser *Parser);
+tAST_Node	*DoStatement(tParser *Parser, tAST_Node *CodeNode);
 tAST_Node	*DoIf(tParser *Parser);
 tAST_Node	*DoWhile(tParser *Parser);
 tAST_Node	*DoFor(tParser *Parser);
@@ -54,10 +61,6 @@ tAST_Node	*GetIdent(tParser *Parser);
 tAST_Node	*GetNumeric(tParser *Parser);
  int	GetReservedWord(void);
 
-void	SyntaxError(tParser *Parser, const char *reason, ...);
-void	SyntaxAssert(tParser *Parser, int tok, int expected);
-//void	FatalError(const char *reason, ...);
-
 
 // === CODE ===
 /**
@@ -65,43 +68,226 @@ void	SyntaxAssert(tParser *Parser, int tok, int expected);
  */
 void Parse_CodeRoot(tParser *Parser)
 {
-	while( LookAhead(Parser) != TOK_NULL )
+	while( LookAhead(Parser) != TOK_EOF )
+	{
+		if( LookAhead(Parser) == TOK_RWORD_TYPEDEF ) {
+			// Type definition.
+			TODO("root typedef");
+			GetToken(Parser);
+			//tType *type = Parse_GetType(Parser);
+			//Parse_DoTypedef(Parser, NULL);
+		}
+		else {
+			// Only other option is a variable/function definition
+			tType *type = Parse_GetType(Parser);
+			if(!type)
+				return ;
+			Parse_DoDefinition(Parser, type, NULL);
+		}
+	}
+}
+
+tType *Parse_GetType_Base(tParser *Parser, enum eStorageClass *StorageClassOut)
+{
+	tType	*type = NULL;
+	unsigned int	qualifiers = 0;
+	enum eStorageClass	storage_class = STORAGECLASS_NORMAL;
+	
+	bool	is_size_set = false;
+	enum eIntegerSize	int_size = INTSIZE_INT;
+	bool	is_signed_set = false;
+	bool	is_signed = true;
+	bool	is_double = true;
+	bool	is_long_double = false;
+	
+	static const char	*const size_names[] = {"char","short","int","long","long long"};
+	#define ASSERT_NO_TYPE()	do{if(type){SyntaxError(Parser, "Multiple types in definition");return NULL;}}while(0)
+	#define ASSERT_NO_SIZE(name)	do{if(is_size_set){ \
+		SyntaxError(Parser, "Invalid use of '%s' with '%.*s'",\
+			size_names[int_size], Parser->Cur.TokenLen, Parser->Cur.TokenStart);return NULL;\
+		}}while(0)
+	#define ASSERT_NO_SIGN(name)	do{if(is_signed_set){ \
+		SyntaxError(Parser, "Invalid use of '%ssigned' with '%.*s'", (is_signed?"":"un"));return NULL;\
+		}}while(0)
+	#define ASSERT_NO_STCLASS(name) do{ if(storage_class != STORAGECLASS_NORMAL) { \
+		SyntaxError(Parser, ""); return NULL;\
+		}}while(0)
+	// 1. Get the base type
+	// - Including storage classes on it
+	bool getting_base_type = true;
+	while( getting_base_type )
 	{
 		switch(GetToken(Parser))
 		{
-		case TOK_RWORD_TYPEDEF:
-			// Type definition
-			// - Expect a type and storage classes
-			TODO("root typedef");
-			// - Hand off to common code with global scope
-			//Parse_DoTypedef(Parser, NULL);
+		// Signedness
+		case TOK_RWORD_SIGNED:
+			ASSERT_NO_SIGN("signed");
+		case TOK_RWORD_UNSIGNED:
+			ASSERT_NO_SIGN("unsigned");
+			ASSERT_NO_TYPE();
+			is_signed_set = true;
+			is_signed = (Parser->Cur.Token == TOK_RWORD_SIGNED);
 			break;
-		// - Storage classes
-		case TOK_RWORD_STATIC:
-		case TOK_RWORD_EXTERN:
-		case TOK_RWORD_CONST:
-		case TOK_RWORD_INLINE:
-			// - Hand off to common code
-			Parse_DoDefinition(Parser, NULL);
+		
+		// void - No possible modifiers
+		case TOK_RWORD_VOID:
+			ASSERT_NO_TYPE();
+			ASSERT_NO_SIZE("void");
+			ASSERT_NO_SIGN("void");
+			// void - we have our base type now?
+			type = Types_CreateVoid();
 			break;
-		// - Compound types
-		case TOK_RWORD_STRUCT:
-		case TOK_RWORD_UNION:
-		case TOK_RWORD_ENUM:
-			// Fetch compound type descriptor (and handle definition)
-			TODO("root compound");
+		
+		// char - allows (un)signed
+		case TOK_RWORD_CHAR:
+			ASSERT_NO_TYPE();
+			ASSERT_NO_SIZE("void");
+			int_size = INTSIZE_CHAR;
+			is_size_set = true;
 			break;
-		// - Identifiers (should be a type)
+		// short - allows sign and 'int'
+		case TOK_RWORD_SHORT:
+			ASSERT_NO_TYPE();
+			ASSERT_NO_SIZE("short");
+			int_size = INTSIZE_SHORT;
+			is_size_set = true;
+			break;
+		// int - Default to INTSIZE_INT if not yet specified
+		// > Special catch for attempting 'int char'
+		case TOK_RWORD_INT:
+			ASSERT_NO_TYPE();
+			if(!is_size_set)
+				int_size = INTSIZE_INT;
+			else if( int_size == INTSIZE_CHAR )
+				ASSERT_NO_SIZE("int");
+			else
+				;
+			is_size_set = true;
+			break;
+		// long - Special casing for:
+		// > 'double long' (reorder of 'long double')
+		// > 'int long' or 'long int'
+		// > 'long long'
+		case TOK_RWORD_LONG:
+			ASSERT_NO_TYPE();
+			if( is_double ) {
+				if( is_long_double ) {
+					SyntaxError(Parser, "Unexpected second 'long' on 'double'");
+					return NULL;
+				}
+				is_long_double = true;
+			}
+			else if( !is_size_set || int_size == INTSIZE_INT )
+				int_size = INTSIZE_LONG;
+			else if( int_size == INTSIZE_LONG )
+				int_size = INTSIZE_LONGLONG;
+			else
+				ASSERT_NO_SIZE("long");
+			is_size_set = true;
+			break;
+		
+		// Floating point - no possible modifiers
+		case TOK_RWORD_FLOAT:
+			ASSERT_NO_TYPE();
+			ASSERT_NO_SIZE("float");
+			ASSERT_NO_SIGN("float");
+			type = Types_CreateFloatType(FLOATSIZE_FLOAT);
+			break;
+		// Double - Handle 'long double'
+		case TOK_RWORD_DOUBLE:
+			ASSERT_NO_TYPE();
+			ASSERT_NO_SIGN("double");
+			is_double = true;
+			if( is_size_set ) {
+				if( int_size != INTSIZE_LONG )
+					ASSERT_NO_SIZE("double");
+				is_long_double = true;
+			}
+			break;
+
+		// User-defined type
 		case TOK_IDENT:
-			// Function/global definition
-			Parse_DoTopIdent(Parser, false);
+			ASSERT_NO_TYPE();
+			if( is_signed_set || is_double )
+				getting_base_type = false;
+			else
+			{
+				ASSERT_NO_SIGN("userdef");
+				type = Types_GetTypeFromName(Parser->Cur.TokenStart, Parser->Cur.TokenLen);
+				if( !type ) {
+					SyntaxError(Parser, "'%.*s' does not describe a type",
+						Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+					return NULL;
+				}
+			}
 			break;
+		
+		// Compound types
+		case TOK_RWORD_ENUM:
+		case TOK_RWORD_UNION:
+		case TOK_RWORD_STRUCT:
+			SyntaxError(Parser, "TODO: Compound types");
+			return NULL;
+			break;
+		
+		// Qualifiers
+		case TOK_RWORD_CONST:    qualifiers |= QUALIFIER_CONST;    break;
+		case TOK_RWORD_RESTRICT: qualifiers |= QUALIFIER_RESTRICT; break;
+		case TOK_RWORD_VOLATILE: qualifiers |= QUALIFIER_VOLATILE; break;
+		
+		// Storage class
+		case TOK_RWORD_EXTERN:
+			ASSERT_NO_STCLASS("extern");
+			storage_class = STORAGECLASS_EXTERN;
+			break;
+		case TOK_RWORD_STATIC:
+			ASSERT_NO_STCLASS("static");
+			storage_class = STORAGECLASS_STATIC;
+			break;
+		case TOK_RWORD_AUTO:
+			ASSERT_NO_STCLASS("auto");
+			storage_class = STORAGECLASS_AUTO;
+			break;
+		case TOK_RWORD_REGISTER:
+			ASSERT_NO_STCLASS("register");
+			storage_class = STORAGECLASS_REGISTER;
+			break;
+		
 		default:
-			// Error
-			SyntaxError(Parser, "Unexpected %s in root", GetTokenStr(Parser->Cur.Token));
+			getting_base_type = false;
 			break;
 		}
 	}
+	PutBack(Parser);
+	
+	// Build type if not already built
+	if( !type )
+	{
+		if( is_double ) {
+			// Floating point type
+			// Some asserts to make sure nothing stupid has happened
+			assert( !is_signed_set );
+			assert( !is_size_set || (int_size != INTSIZE_LONG) );
+			type = Types_CreateFloatType( (is_long_double ? FLOATSIZE_LONGDOUBLE : FLOATSIZE_DOUBLE) );
+		}
+		else if( is_size_set ) {
+			// Intger type
+			type = Types_CreateIntegerType( is_signed, int_size );
+		}
+		else {
+			// No size specified, error?
+			SyntaxError(Parser, "Expected type");
+			return NULL;
+		}
+	}
+	
+	type = Types_ApplyQualifiers(type, qualifiers);
+	*StorageClassOut = storage_class;
+	return type;
+	#undef ASSERT_NO_TYPE
+	#undef ASSERT_NO_SIZE
+	#undef ASSERT_NO_SIGN
+	#undef ASSERT_NO_STCLASS
 }
 
 /**
@@ -109,39 +295,31 @@ void Parse_CodeRoot(tParser *Parser)
  */
 tType *Parse_GetType(tParser *Parser)
 {
-	tType	*type = NULL;
-	unsigned int	storage_classes = 0;
-	// Consume storage classes until an identifier is hit
-	// - Asterisk creates a pointer using current classes
-	while( !type || Parser->Cur.Token != TOK_IDENT )
+	enum eStorageClass	storage_class;
+	tType *type = Parse_GetType_Base(Parser, &storage_class);
+	if( !type )
+		return NULL;
+	unsigned int qualifiers = 0;
+	// 2. Handle qualifiers and pointers
+	while( LookAhead(Parser) != TOK_IDENT )
 	{
-		switch( Parser->Cur.Token )
+		switch( GetToken(Parser) )
 		{
-		case TOK_IDENT:
-			// Identifier, should only happen if Type is unset
-			assert(!type);
-			type = Types_GetTypeFromName(Parser->Cur.TokenStart, Parser->Cur.TokenLen);
-			if( !type ) {
-				SyntaxError(Parser, "'%.*s' does not describe a type",
-					Parser->Cur.TokenLen, Parser->Cur.TokenStart);
-				return NULL;
-			}
-			break;
 		case TOK_ASTERISK:
 			// Pointer
 			// - Determine type
-			//type = Types_ApplyStorageClasses(type, storage_classes);
-			//type = Types_CreatePointerType(type);
+			type = Types_ApplyQualifiers(type, qualifiers);
+			type = Types_CreatePointerType(type);
 			// - Clear
-			storage_classes = 0;
+			qualifiers = 0;
 			// - Continue on
 			break;
-		case TOK_RWORD_STATIC:	storage_classes |= 1;	break;
-		case TOK_RWORD_INLINE:	storage_classes |= 2;	break;
-		case TOK_RWORD_EXTERN:	storage_classes |= 4;	break;
-		case TOK_RWORD_CONST:	storage_classes	|= 8;	break;
+		case TOK_RWORD_CONST:    qualifiers |= QUALIFIER_CONST;    break;
+		case TOK_RWORD_RESTRICT: qualifiers |= QUALIFIER_RESTRICT; break;
+		case TOK_RWORD_VOLATILE: qualifiers |= QUALIFIER_VOLATILE; break;
+		
 		default:
-			SyntaxError_T(Parser, Parser->Cur.Token, "Expected * or storage class");
+			SyntaxError_T(Parser, Parser->Cur.Token, "Expected * or qualifier");
 			Types_DerefType(type);
 			return NULL;
 		}
@@ -153,9 +331,9 @@ tType *Parse_GetType(tParser *Parser)
 /**
  * \brief Handle variable/function definition
  */
-int Parse_DoDefinition(tParser *Parser, tType *Type)
+int Parse_DoDefinition(tParser *Parser, const tType *Type, tAST_Node *CodeNode)
 {
-	SyntaxAssert(Parser, Parser->Cur.Token, TOK_IDENT);
+	SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT);
 	
 	// Current token is variable/function name
 	
@@ -168,54 +346,84 @@ int Parse_DoDefinition(tParser *Parser, tType *Type)
 	// - next * = Declare variable
 	else
 	{
-		TODO("Variable definition");
+		// TODO: Multiple variable definitions work off base type, not final type
+		// i.e. pointer-ness binds to name, not type
+		
+		const tType	*basetype = Type;	// not actually base type, pointers trimmed if needed
+		
+		// Define variable based off this type
+		Parse_DoDefinition_VarActual(Parser, Type, CodeNode);
+		
+		if( LookAhead(Parser) == TOK_COMMA )
+		{
+			// Work the type back until it's not a pointer
+			while( basetype->Class == TYPECLASS_POINTER )
+				basetype = basetype->Pointer;
+			
+			Type = basetype;
+			
+			// Get extra definitions
+			while( GetToken(Parser) == TOK_COMMA )
+			{
+				// Handle pointers and attributes (const/volatile/restrict)
+				// TODO:
+				// Get identifier
+				SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT);
+				Parse_DoDefinition_VarActual(Parser, Type, CodeNode);
+			}
+			PutBack(Parser);
+		}
+	
+		SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON);
 	}
+	DEBUG("<<<");
 	return 1;
 }
 
-/*
- * \brief Handle an identifier at the top of the parse tree (first token in a statement)
- * 
- * \param NoCode	Set if outside of a function (errors if not a definition)
- */
-tAST_Node *Parse_DoTopIdent(tParser *Parser, bool NoCode)
+int Parse_DoDefinition_VarActual(tParser *Parser, const tType *BaseType, tAST_Node *CodeNode)
 {
-	// 1. Must be an identifier
+	const tType	*type = BaseType;
 	SyntaxAssert(Parser, Parser->Cur.Token, TOK_IDENT);
 	
-	// 2. If next token is:
-	switch(LookAhead(Parser))
+	char name[ Parser->Cur.TokenLen+1 ];
+	strncpy(name, Parser->Cur.TokenStart, Parser->Cur.TokenLen+1);
+	
+	// TODO: Arrays (first level size is optional)
+	#if 0
+	while(GetToken(Parser) == TOK_SQUARE_OPEN)
 	{
-	// - An identifier = Definition (prev must be a type)
-	case TOK_IDENT:
-	// - Storage class = Definition (prev must be a type)
-	case TOK_RWORD_STATIC:
-	case TOK_RWORD_EXTERN:
-	case TOK_RWORD_INLINE:
-	case TOK_RWORD_CONST:
-		{
-			// Get type
-			tType *type = Parse_GetType(Parser);
-			if( !type ) {
-				return NULL;
-			}
-			
-			if( Parse_DoDefinition(Parser, type) )
-				return NULL;
-		}
-		return ACC_ERRPTR;
-	// - * = Variable reference (or function call)
-	default:
-		if( NoCode ) {
-			// Error!
-			SyntaxError(Parser, "Unexpected %s", GetTokenStr(Parser->Cur.Token));
-			return NULL;
-		}
-		// Descend into expression code
-		return DoExpr0(Parser);
+		tAST_Node *size = DoExpr0(Parser);
+		SyntaxAssert(Parser, GetToken(Parser), TOK_SQUARE_CLOSE);
 	}
-
-	return NULL;
+	PutBack(Parser);
+	#endif
+	
+	tAST_Node	*init_value = NULL;
+	if( LookAhead(Parser) == TOK_ASSIGNEQU )
+	{
+		GetToken(Parser);
+		if( LookAhead(Parser) == TOK_BRACE_OPEN ) {
+			// Only valid if this type is a compound type (array or struct)
+		}
+		else {
+			init_value = DoExpr0(Parser);
+			if( !init_value )
+				return 1;
+		}
+	}
+	
+	if( CodeNode )
+	{
+		//tAST_Node *ret = AST_NewVariableDef(type, name);
+		//AST_AppendNode(CodeNode, ret);
+		TODO("Local variables");
+	}
+	else
+	{
+		// TODO: Linkage
+		Symbol_AddGlobalVariable(type, LINKAGE_GLOBAL, name, init_value);
+	}
+	return 0;
 }
 
 /**
@@ -231,38 +439,47 @@ tAST_Node *DoCodeBlock(tParser *Parser)
 		// Parse Block
 		while(LookAhead(Parser) != TOK_BRACE_CLOSE)
 		{
-			AST_AppendNode( ret, DoStatement(Parser) );
+			AST_AppendNode( ret, DoStatement(Parser, ret) );
 		}
 		GetToken(Parser);
 		return ret;
 	}
-
-	return DoStatement(Parser);
+	else
+	{
+		return DoStatement(Parser, ACC_ERRPTR);
+	}
 }
 
 /**
  * \brief Parses a statement _within_ a function
  */
-tAST_Node *DoStatement(tParser *Parser)
+tAST_Node *DoStatement(tParser *Parser, tAST_Node *CodeNode)
 {
 	tAST_Node	*ret;
 
 	switch(LookAhead(Parser))
 	{
+	case TOK_EOF:
+		return NULL;
 	case TOK_RWORD_IF:
 		GetToken(Parser);
 		return DoIf(Parser);
-	case TOK_EOF:
-		return NULL;
 
 	case TOK_RWORD_RETURN:
 		ret = DoReturn(Parser);
 		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
 		break;
-	case TOK_IDENT:
-		ret = Parse_DoTopIdent(Parser, false);
-		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
-		break;
+	case TOK_IDENT: {
+		tType *type = Types_GetTypeFromName(Parser->Cur.TokenStart, Parser->Cur.TokenLen);
+		if( type ) {
+			Parse_DoDefinition(Parser, type, CodeNode);
+			return ACC_ERRPTR;
+		}
+		else {
+			ret = DoExpr0(Parser);
+			SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
+		}
+		break; }
 	default:
 		ret = DoExpr0(Parser);
 		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
@@ -767,6 +984,12 @@ tAST_Node *GetCharConst(tParser *Parser)
 	Parse_ConvertString(Parser, (void*)&val, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
 
 	return AST_NewInteger(val);
+}
+
+
+tAST_Node *GetIdent(tParser *Parser)
+{
+	return NULL;
 }
 
 /**

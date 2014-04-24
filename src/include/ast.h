@@ -6,6 +6,7 @@
 #define _AST_H_
 
 typedef struct sAST_Node	tAST_Node;
+#include <stdbool.h>
 
 #include <stdint.h>
 #include <symbol.h>

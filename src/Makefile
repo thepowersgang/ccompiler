@@ -4,10 +4,11 @@ RM = rm -f
 CC = gcc
 MKENUM = ../MakeEnum
 
-OBJ  = main.o ast.o data.o helpers.o symbol.o
-OBJ += parser/token.o parser/expr.o
+OBJ  = main.o ast.o data.o helpers.o symbol.o types.o
+OBJ += parser/token.o parser/expr.o parser/errors.o
 OBJ += opt/common.o opt/pass1.o opt/pass2.o
-OBJ += output/common.o output/arch/x86.o output/arch/vm16cisc.o
+OBJ += output/common.o output/arch/x86.o
+# output/arch/vm16cisc.o
 OBJ := $(OBJ:%=obj/%)
 DEPFILES  = $(OBJ:%=%.d)
 BIN = ../cc
