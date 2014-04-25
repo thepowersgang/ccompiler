@@ -56,6 +56,10 @@ const struct sRsvdWord {
 	{"static", TOK_RWORD_STATIC},
 	{"inline", TOK_RWORD_INLINE},
 	{"register", TOK_RWORD_REGISTER},
+	// Class
+	{"const", TOK_RWORD_CONST},
+	{"restrict", TOK_RWORD_RESTRICT},
+	{"volatile", TOK_RWORD_VOLATILE},
 };
 
 // === CODE ===

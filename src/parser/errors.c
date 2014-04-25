@@ -33,14 +33,16 @@ void SyntaxError(tParser *Parser, const char *format, ...)
 	fprintf(stderr, "\n");
 }
 
-void SyntaxAssert(tParser *Parser, enum eTokens tok, enum eTokens expected)
+int SyntaxAssert(tParser *Parser, enum eTokens tok, enum eTokens expected)
 {
 	if( tok != expected )
 	{
 		message_header(Parser, "error", "syntax");
 		fprintf(stderr, "Unexpected %s, expected %s", GetTokenStr(tok), GetTokenStr(expected));
 		fprintf(stderr, "\n");
+		return 1;
 	}
+	return 0;
 }
 
 void LexerError(tParser *Parser, const char *format, ...)

@@ -14,6 +14,7 @@ typedef struct sAST_Node	tAST_Node;
 enum eAST_NodeTypes
 {
 	NODETYPE_NULL,
+	NODETYPE_NOOP,
 	
 	// -- Leaves --
 	NODETYPE_CAT_LEAF = 0x100,
@@ -102,7 +103,7 @@ struct sAST_Node
 
 		struct {
 			tSymbol	*Sym;	//! Symbol structure (NULL for unresolved)
-			char	*Name;	//! Resolved in code generation, but checked on compilation
+			const char	*Name;	//! Resolved in code generation, but checked on compilation
 		}	Symbol;
 
 		// Branches
@@ -157,8 +158,10 @@ struct sAST_Node
 
 extern void	AST_DumpTree(tAST_Node *Node, int Depth);
 extern tAST_Node	*AST_NewNode(int Type);
+#define AST_FreeNode	AST_DeleteNode
 extern void	AST_DeleteNode(tAST_Node *Node);
 extern tAST_Node	*AST_AppendNode(tAST_Node *Parent, tAST_Node *Child);
+extern tAST_Node	*AST_NewNoOp(void);
 extern tAST_Node	*AST_NewCodeBlock(void);
 extern tAST_Node	*AST_NewIf(tAST_Node *Test, tAST_Node *True, tAST_Node *False);
 extern tAST_Node	*AST_NewWhile(tAST_Node *Test, tAST_Node *Code);
@@ -168,7 +171,7 @@ extern tAST_Node	*AST_NewAssign(tAST_Node *To, tAST_Node *From);
 extern tAST_Node	*AST_NewAssignOp(tAST_Node *To, int Op, tAST_Node *From);
 extern tAST_Node	*AST_NewBinOp(int Op, tAST_Node *Left, tAST_Node *Right);
 extern tAST_Node	*AST_NewUniOp(int Op, tAST_Node *Value);
-extern tAST_Node	*AST_NewSymbol(tSymbol *Sym, char *Name);
+extern tAST_Node	*AST_NewSymbol(const char *Name);
 extern tAST_Node	*AST_NewLocalVar(tSymbol *Sym);
 extern tAST_Node	*AST_NewString(void *Data, size_t Length);
 extern tAST_Node	*AST_NewInteger(uint64_t Value);

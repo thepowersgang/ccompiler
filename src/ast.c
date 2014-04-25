@@ -4,11 +4,13 @@
 #include <global.h>
 #include <ast.h>
 #include <stdio.h>
+#include <string.h>
 
 // === PROTOTYPES ===
 void	AST_DumpTree(tAST_Node *Node, int Depth);
 tAST_Node	*AST_NewNode(int Type);
 tAST_Node	*AST_AppendNode(tAST_Node *Parent, tAST_Node *Child);
+tAST_Node	*AST_NewNoOp(void);
 tAST_Node	*AST_NewCodeBlock(void);
 tAST_Node	*AST_NewIf(tAST_Node *Test, tAST_Node *True, tAST_Node *False);
 tAST_Node	*AST_NewWhile(tAST_Node *Test, tAST_Node *Code);
@@ -18,7 +20,6 @@ tAST_Node	*AST_NewAssign(tAST_Node *To, tAST_Node *From);
 tAST_Node	*AST_NewAssignOp(tAST_Node *To, int Op, tAST_Node *From);
 tAST_Node	*AST_NewBinOp(int Op, tAST_Node *Left, tAST_Node *Right);
 tAST_Node	*AST_NewUniOp(int Op, tAST_Node *Value);
-tAST_Node	*AST_NewSymbol(tSymbol *Sym, char *Name);
 tAST_Node	*AST_NewLocalVar(tSymbol *Sym);
 tAST_Node	*AST_NewString(void *Data, size_t Length);
 tAST_Node	*AST_NewInteger(uint64_t Value);
@@ -177,6 +178,11 @@ tAST_Node *AST_AppendNode(tAST_Node *Parent, tAST_Node *Child)
 	return Parent;
 }
 
+tAST_Node *AST_NewNoOp(void)
+{
+	return AST_NewNode(NODETYPE_NOOP);
+}
+
 tAST_Node *AST_NewCodeBlock(void)
 {
 	tAST_Node	*ret = AST_NewNode(NODETYPE_BLOCK);
@@ -252,11 +258,11 @@ tAST_Node *AST_NewUniOp(int Op, tAST_Node *Value)
 	return ret;
 }
 
-tAST_Node *AST_NewSymbol(tSymbol *Sym, char *Name)
+tAST_Node *AST_NewSymbol(const char *Name)
 {
 	tAST_Node	*ret = AST_NewNode(NODETYPE_SYMBOL);
-	ret->Symbol.Sym = Sym;
-	ret->Symbol.Name = Name;
+	ret->Symbol.Sym = NULL;
+	ret->Symbol.Name = strdup(Name);
 	return ret;
 }
 

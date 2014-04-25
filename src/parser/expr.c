@@ -20,6 +20,7 @@
 
 // === MACROS ===
 #define CMPTOK(str)	(strlen((str))==giTokenLength&&strncmp((str),gsTokenStart,giTokenLength)==0)
+#define GETTOKSTR(name)	char name[Parser->Cur.TokenLen+1]; memcpy(name,Parser->Cur.TokenStart,Parser->Cur.TokenLen);name[Parser->Cur.TokenLen]=0
 
 #ifdef DEBUG_ENABLED
 #define DEBUG(str, v...)	printf("DEBUG %s:%i: %s "str"\n", __FILE__, __LINE__, __func__ ,## v );
@@ -40,7 +41,6 @@ tAST_Node	*DoStatement(tParser *Parser, tAST_Node *CodeNode);
 tAST_Node	*DoIf(tParser *Parser);
 tAST_Node	*DoWhile(tParser *Parser);
 tAST_Node	*DoFor(tParser *Parser);
-tAST_Node	*DoReturn(tParser *Parser);
 
 tAST_Node	*DoExpr0(tParser *Parser);	// Assignment
 tAST_Node	*DoExpr1(tParser *Parser);	// Ternary
@@ -82,7 +82,8 @@ void Parse_CodeRoot(tParser *Parser)
 			tType *type = Parse_GetType(Parser);
 			if(!type)
 				return ;
-			Parse_DoDefinition(Parser, type, NULL);
+			if( Parse_DoDefinition(Parser, type, NULL) )
+				return ;
 		}
 	}
 }
@@ -258,6 +259,7 @@ tType *Parse_GetType_Base(tParser *Parser, enum eStorageClass *StorageClassOut)
 			break;
 		}
 	}
+	DEBUG("Hit unknown, putting back and returning");
 	PutBack(Parser);
 	
 	// Build type if not already built
@@ -301,7 +303,8 @@ tType *Parse_GetType(tParser *Parser)
 		return NULL;
 	unsigned int qualifiers = 0;
 	// 2. Handle qualifiers and pointers
-	while( LookAhead(Parser) != TOK_IDENT )
+	bool	loop = true;
+	while( loop )
 	{
 		switch( GetToken(Parser) )
 		{
@@ -319,13 +322,77 @@ tType *Parse_GetType(tParser *Parser)
 		case TOK_RWORD_VOLATILE: qualifiers |= QUALIFIER_VOLATILE; break;
 		
 		default:
-			SyntaxError_T(Parser, Parser->Cur.Token, "Expected * or qualifier");
-			Types_DerefType(type);
-			return NULL;
+			PutBack(Parser);
+			loop = false;
+			break;
 		}
-		GetToken(Parser);
 	}
 	return type;
+}
+
+char **Parse_DoFcnProto(tParser *Parser, const tType *Type, const tType **OutType)
+{
+	const int MAX_ARGS = 16;
+	 int	nArgs = 0;
+	const tType	*argtypes[MAX_ARGS];
+	char	*argnames[MAX_ARGS];
+	bool	isVArg = false;
+	GetToken(Parser);	// '('
+	do {
+		if( LookAhead(Parser) == TOK_VAARG ) {
+			GetToken(Parser);	// eat ...
+			GetToken(Parser);	// prep for check on ')'
+			isVArg = true;
+			break;
+		}
+		// Limit check
+		if( nArgs >= MAX_ARGS ) {
+			SyntaxError(Parser, "Too many arguments (max %i)", MAX_ARGS);
+			goto _err;
+		}
+		
+		// Get Type
+		tType *argtype = Parse_GetType(Parser);
+		if(!argtype) {
+			goto _err;
+		}
+		
+		argtypes[nArgs] = argtype;
+		
+		// optionally get variable name
+		if( LookAhead(Parser) == TOK_IDENT )
+		{
+			GetToken(Parser);
+
+			GETTOKSTR(varname);
+			
+			argnames[nArgs] = strdup(varname);
+		}
+		else
+		{
+			argnames[nArgs] = NULL;
+		}
+		nArgs ++;
+	} while(GetToken(Parser) == TOK_COMMA);
+	
+	if( SyntaxAssert(Parser, Parser->Cur.Token, TOK_PAREN_CLOSE) )
+		goto _err;
+	
+	DEBUG("nArgs = %i, isVArg=%i", nArgs, isVArg);
+	
+	*OutType = Types_CreateFunctionType(Type, isVArg, nArgs, argtypes);
+	assert( *OutType );
+	
+	char **ret = malloc( sizeof(char*) * nArgs );
+	for(int i = 0; i < nArgs; i ++)
+		ret[i] = argnames[i];
+	return ret;
+_err:
+	for( int i = 0; i < nArgs; i ++ )
+	{
+		free(argnames[i]);
+	}
+	return NULL;
 }
 
 /**
@@ -333,7 +400,8 @@ tType *Parse_GetType(tParser *Parser)
  */
 int Parse_DoDefinition(tParser *Parser, const tType *Type, tAST_Node *CodeNode)
 {
-	SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT);
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT) )
+		return 1;
 	
 	// Current token is variable/function name
 	
@@ -341,7 +409,34 @@ int Parse_DoDefinition(tParser *Parser, const tType *Type, tAST_Node *CodeNode)
 	if( LookAhead(Parser) == TOK_PAREN_OPEN )
 	{
 		// Parse function arguments
-		TODO("Function definition arguments");
+		GETTOKSTR(name);
+		
+		DEBUG("FCN name='%s'", name);
+		
+		char **argnames = Parse_DoFcnProto(Parser, Type, &Type);
+		if(!argnames)
+			return 1;
+		
+		// TODO: Support suffixed attributes?
+		
+		if( GetToken(Parser) == TOK_BRACE_OPEN )
+		{
+			// Create function with definition
+			Symbol_AddFunction(Type, LINKAGE_GLOBAL, name, NULL);
+			PutBack(Parser);
+			tAST_Node *code = DoCodeBlock(Parser);
+			if( !code )	return 1;
+			Symbol_AddFunction(Type, LINKAGE_GLOBAL, name, code);
+		}
+		else if( Parser->Cur.Token == TOK_SEMICOLON )
+		{
+			// Create function as prototype
+			Symbol_AddFunction(Type, LINKAGE_GLOBAL, name, NULL);
+		}
+		else
+		{
+			SyntaxError_T(Parser, Parser->Cur.Token, "Expected TOK_BRACE_OPEN or TOK_SEMICOLON");
+		}
 	}
 	// - next * = Declare variable
 	else
@@ -352,7 +447,8 @@ int Parse_DoDefinition(tParser *Parser, const tType *Type, tAST_Node *CodeNode)
 		const tType	*basetype = Type;	// not actually base type, pointers trimmed if needed
 		
 		// Define variable based off this type
-		Parse_DoDefinition_VarActual(Parser, Type, CodeNode);
+		if( Parse_DoDefinition_VarActual(Parser, Type, CodeNode) )
+			return 1;
 		
 		if( LookAhead(Parser) == TOK_COMMA )
 		{
@@ -368,40 +464,46 @@ int Parse_DoDefinition(tParser *Parser, const tType *Type, tAST_Node *CodeNode)
 				// Handle pointers and attributes (const/volatile/restrict)
 				// TODO:
 				// Get identifier
-				SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT);
-				Parse_DoDefinition_VarActual(Parser, Type, CodeNode);
+				if( SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT) )
+					return 1;
+				if( Parse_DoDefinition_VarActual(Parser, Type, CodeNode) )
+					return 1;
 			}
 			PutBack(Parser);
 		}
 	
-		SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON);
+		if( SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON) )
+			return 1;
 	}
 	DEBUG("<<<");
-	return 1;
+	return 0;
 }
 
 int Parse_DoDefinition_VarActual(tParser *Parser, const tType *BaseType, tAST_Node *CodeNode)
 {
 	const tType	*type = BaseType;
-	SyntaxAssert(Parser, Parser->Cur.Token, TOK_IDENT);
+	if( SyntaxAssert(Parser, Parser->Cur.Token, TOK_IDENT) )
+		return 1;
 	
-	char name[ Parser->Cur.TokenLen+1 ];
-	strncpy(name, Parser->Cur.TokenStart, Parser->Cur.TokenLen+1);
+	GETTOKSTR(name);
+	DEBUG("name='%s'", name)
 	
 	// TODO: Arrays (first level size is optional)
 	#if 0
 	while(GetToken(Parser) == TOK_SQUARE_OPEN)
 	{
 		tAST_Node *size = DoExpr0(Parser);
-		SyntaxAssert(Parser, GetToken(Parser), TOK_SQUARE_CLOSE);
+		if( SyntaxAssert(Parser, GetToken(Parser), TOK_SQUARE_CLOSE) ) {
+			AST_FreeNode(size);
+			return 1;
+		}
 	}
 	PutBack(Parser);
 	#endif
 	
 	tAST_Node	*init_value = NULL;
-	if( LookAhead(Parser) == TOK_ASSIGNEQU )
+	if( GetToken(Parser) == TOK_ASSIGNEQU )
 	{
-		GetToken(Parser);
 		if( LookAhead(Parser) == TOK_BRACE_OPEN ) {
 			// Only valid if this type is a compound type (array or struct)
 		}
@@ -410,6 +512,10 @@ int Parse_DoDefinition_VarActual(tParser *Parser, const tType *BaseType, tAST_No
 			if( !init_value )
 				return 1;
 		}
+	}
+	else
+	{
+		PutBack(Parser);
 	}
 	
 	if( CodeNode )
@@ -423,6 +529,7 @@ int Parse_DoDefinition_VarActual(tParser *Parser, const tType *BaseType, tAST_No
 		// TODO: Linkage
 		Symbol_AddGlobalVariable(type, LINKAGE_GLOBAL, name, init_value);
 	}
+	DEBUG("<<<");
 	return 0;
 }
 
@@ -439,7 +546,13 @@ tAST_Node *DoCodeBlock(tParser *Parser)
 		// Parse Block
 		while(LookAhead(Parser) != TOK_BRACE_CLOSE)
 		{
-			AST_AppendNode( ret, DoStatement(Parser, ret) );
+			DEBUG("Line");
+			tAST_Node *line = DoStatement(Parser, ret);
+			if(!line) {
+				AST_FreeNode(line);
+				return NULL;
+			}
+			AST_AppendNode( ret, line );
 		}
 		GetToken(Parser);
 		return ret;
@@ -466,8 +579,8 @@ tAST_Node *DoStatement(tParser *Parser, tAST_Node *CodeNode)
 		return DoIf(Parser);
 
 	case TOK_RWORD_RETURN:
-		ret = DoReturn(Parser);
-		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
+		GetToken(Parser);
+		ret = AST_NewUniOp( NODETYPE_RETURN, DoExpr0(Parser) );
 		break;
 	case TOK_IDENT: {
 		tType *type = Types_GetTypeFromName(Parser->Cur.TokenStart, Parser->Cur.TokenLen);
@@ -477,13 +590,15 @@ tAST_Node *DoStatement(tParser *Parser, tAST_Node *CodeNode)
 		}
 		else {
 			ret = DoExpr0(Parser);
-			SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
 		}
 		break; }
 	default:
 		ret = DoExpr0(Parser);
-		SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON );
 		break;
+	}
+	if( SyntaxAssert( Parser, GetToken(Parser), TOK_SEMICOLON ) ) {
+		AST_FreeNode(ret);
+		return NULL;
 	}
 	return ret;
 }
@@ -493,22 +608,38 @@ tAST_Node *DoStatement(tParser *Parser, tAST_Node *CodeNode)
  */
 tAST_Node *DoIf(tParser *Parser)
 {
-	tAST_Node	*test, *true_code;
+	tAST_Node	*test = NULL, *true_code = NULL;
 	tAST_Node	*false_code = NULL;
 
-	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN);		// Eat (
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN) )	// Eat (
+		goto _err;
 	test = DoExpr0(Parser);
-	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);	// Eat )
+	if( !test )
+		goto _err;
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE) )	// Eat )
+		goto _err;
 
 	// Contents
 	true_code = DoCodeBlock(Parser);
+	if( !true_code )
+		goto _err;
 
-	if(GetToken(Parser) == TOK_RWORD_ELSE)
-	{
+	if(GetToken(Parser) == TOK_RWORD_ELSE) {
 		false_code = DoCodeBlock(Parser);
 	}
+	else {
+		false_code = AST_NewNoOp();
+		PutBack(Parser);
+	}
+	if( !false_code )
+		goto _err;
 
 	return AST_NewIf(test, true_code, false_code);
+_err:
+	AST_FreeNode(test);
+	AST_FreeNode(true_code);
+	AST_FreeNode(false_code);
+	return NULL;
 }
 
 /**
@@ -534,36 +665,45 @@ tAST_Node *DoWhile(tParser *Parser)
  */
 tAST_Node *DoFor(tParser *Parser)
 {
-	tAST_Node	*init, *test, *post, *code;
+	tAST_Node	*init = NULL, *test = NULL, *post = NULL, *code = NULL;
 
-	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN);	// Eat (
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_OPEN) )	// Eat (
+		goto _err;
 
 	// Initialiser (definition valid)
 	// TODO: Support defining variables in initialiser
 	init = DoExpr0(Parser);
-	SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON);	// Eat ;
+	if( !init )
+		goto _err;
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON) )	// Eat ;
+		goto _err;
 
 	// Condition
 	test = DoExpr0(Parser);
-	SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON);	// Eat ;
+	if( !test )
+		goto _err;
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_SEMICOLON) )	// Eat ;
+		goto _err;
 
 	// Postscript
 	post = DoExpr0(Parser);
-
-	SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);	// Eat )
+	if( !post )
+		goto _err;
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE) )	// Eat )
+		goto _err;
 
 	// Contents
 	code = DoCodeBlock(Parser);
+	if( !code )
+		goto _err;
 
 	return AST_NewFor(init, test, post, code);
-}
-
-/**
- * \brief Handle a return statement
- */
-tAST_Node *DoReturn(tParser *Parser)
-{
-	return AST_NewUniOp( NODETYPE_RETURN, DoExpr0(Parser) );
+_err:
+	AST_FreeNode(init);
+	AST_FreeNode(test);
+	AST_FreeNode(post);
+	AST_FreeNode(code);
+	return NULL;
 }
 
 // --------------------
@@ -629,7 +769,7 @@ tAST_Node *DoExpr2(tParser *Parser)
 			ret = AST_NewBinOp(NODETYPE_BOOLOR, ret, _next(Parser));
 			break;
 		case TOK_LOGICAND:
-			ret = AST_NewBinOp(NODETYPE_BOOLOR, ret, _next(Parser));
+			ret = AST_NewBinOp(NODETYPE_BOOLAND, ret, _next(Parser));
 			break;
 		default:
 			PutBack(Parser);
@@ -663,6 +803,7 @@ tAST_Node *DoExpr3(tParser *Parser)
 			ret = AST_NewBinOp(NODETYPE_BWXOR, ret, _next(Parser));
 			break;
 		default:
+			PutBack(Parser);
 			cont = false;
 			break;
 		}
@@ -743,7 +884,7 @@ tAST_Node *DoExpr6(tParser *Parser)
 
 	while(cont)
 	{
-		switch(LookAhead(Parser))
+		switch(GetToken(Parser))
 		{
 		case TOK_PLUS:
 			ret = AST_NewBinOp(NODETYPE_ADD, ret, _next(Parser));
@@ -774,9 +915,11 @@ tAST_Node *DoExpr7(tParser *Parser)
 		switch(GetToken(Parser))
 		{
 		case TOK_ASTERISK:
+			DEBUG("Multiply");
 			ret = AST_NewBinOp(NODETYPE_MULTIPLY, ret, _next(Parser));
 			break;
 		case TOK_DIVIDE:
+			DEBUG("Divide");
 			ret = AST_NewBinOp(NODETYPE_DIVIDE, ret, _next(Parser));
 			break;
 		default:
@@ -786,6 +929,7 @@ tAST_Node *DoExpr7(tParser *Parser)
 		}
 	}
 	return ret;
+	#undef _next
 }
 
 // --------------------
@@ -816,33 +960,37 @@ tAST_Node *DoExpr8(tParser *Parser)
 // --------------------
 tAST_Node *DoExpr9(tParser *Parser)
 {
-	tAST_Node	*ret = DoMember(Parser);
+	#define _next	DoMember
+	tAST_Node	*ret;
 	switch(GetToken(Parser))
 	{
 	case TOK_INC:
-		ret = AST_NewUniOp(NODETYPE_PREINC, ret);
+		ret = AST_NewUniOp(NODETYPE_PREINC, _next(Parser));
 		break;
 	case TOK_DEC:
-		ret = AST_NewUniOp(NODETYPE_PREDEC, ret);
+		ret = AST_NewUniOp(NODETYPE_PREDEC, _next(Parser));
 		break;
 	case TOK_MINUS:
-		ret = AST_NewUniOp(NODETYPE_NEGATE, ret);
+		ret = AST_NewUniOp(NODETYPE_NEGATE, _next(Parser));
 		break;
 	case TOK_NOT:
-		ret = AST_NewUniOp(NODETYPE_BWNOT, ret);
+		ret = AST_NewUniOp(NODETYPE_BWNOT, _next(Parser));
 		break;
 	case TOK_AMP:
-		ret = AST_NewUniOp(NODETYPE_ADDROF, ret);
+		ret = AST_NewUniOp(NODETYPE_ADDROF, _next(Parser));
 		break;
 	case TOK_ASTERISK:
-		ret = AST_NewUniOp(NODETYPE_DEREF, ret);
+		DEBUG("Deref");
+		ret = AST_NewUniOp(NODETYPE_DEREF, _next(Parser));
 		break;
 
 	default:
 		PutBack(Parser);
+		ret = _next(Parser);
 		break;
 	}
 	return ret;
+	#undef _next
 }
 
 // ---
@@ -859,6 +1007,25 @@ tAST_Node *DoMember(tParser *Parser)
 		break;
 	case TOK_MEMBER:	// ->
 		ret = AST_NewBinOp(NODETYPE_MEMBER, AST_NewUniOp(NODETYPE_DEREF, ret), DoMember(Parser));
+		break;
+	case TOK_PAREN_OPEN:
+		ret = AST_NewFunctionCall(ret);
+		if( GetToken(Parser) != TOK_PAREN_CLOSE )
+		{
+			PutBack(Parser);
+			do {
+				tAST_Node *arg = DoExpr0(Parser);
+				if(!arg) {
+					AST_FreeNode(ret);
+					return NULL;
+				}
+				AST_AppendNode(ret, arg);
+			} while( GetToken(Parser) == TOK_COMMA );
+		}
+		if(SyntaxAssert(Parser, Parser->Cur.Token, TOK_PAREN_CLOSE)) {
+			AST_FreeNode(ret);
+			return NULL;
+		}
 		break;
 	default:
 		PutBack(Parser);
@@ -877,7 +1044,10 @@ tAST_Node *DoParen(tParser *Parser)
 		tAST_Node	*ret;
 		GetToken(Parser);
 		ret = DoExpr0(Parser);
-		SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE);
+		if( SyntaxAssert(Parser, GetToken(Parser), TOK_PAREN_CLOSE) ) {
+			AST_FreeNode(ret);
+			return NULL;
+		}
 		return ret;
 	}
 	else
@@ -951,7 +1121,8 @@ size_t Parse_ConvertString(tParser *Parser, char *Output, const char *Src, size_
  */
 tAST_Node *GetString(tParser *Parser)
 {
-	SyntaxAssert(Parser, GetToken(Parser), TOK_STR);
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_STR) )
+		return NULL;
 
 	// Parse String
 	size_t	len = Parse_ConvertString(Parser, NULL, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
@@ -971,7 +1142,8 @@ tAST_Node *GetCharConst(tParser *Parser)
 {
 	uint64_t	val;
 
-	SyntaxAssert(Parser, GetToken(Parser), TOK_STR);
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_STR) )
+		return NULL;
 
 //	if( giTokenLength > 1 )
 //		SyntaxWarning("Multi-byte character constants are not recommended");
@@ -989,7 +1161,12 @@ tAST_Node *GetCharConst(tParser *Parser)
 
 tAST_Node *GetIdent(tParser *Parser)
 {
-	return NULL;
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_IDENT) )
+		return NULL;
+
+	GETTOKSTR(name);
+	
+	return AST_NewSymbol(name);
 }
 
 /**
@@ -999,16 +1176,15 @@ tAST_Node *GetIdent(tParser *Parser)
 tAST_Node *GetNumeric(tParser *Parser)
 {
 	// Check token
-	SyntaxAssert(Parser, GetToken(Parser), TOK_CONST_NUM);
+	if( SyntaxAssert(Parser, GetToken(Parser), TOK_CONST_NUM) )
+		return NULL;
 
 	// Create Temporary String
-	char	temp[Parser->Cur.TokenLen+1];
-	for( int i = 0; i < Parser->Cur.TokenLen; i ++ )
-		temp[ i ] = Parser->Cur.TokenStart[ i ];
-	temp[ Parser->Cur.TokenLen ] = '\0';
+	GETTOKSTR(temp);
 
 	// Get value
 	long value = strtol( temp, NULL, 0 );
+	DEBUG("'%s' = %li", temp, value);
 	return AST_NewInteger( value );
 }
 

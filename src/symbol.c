@@ -86,13 +86,13 @@ tSymbol *Symbol_GetLocalVariable(char *Name)
 
 	DEBUG_S(" gpCurrentFunction = %p\n", gpCurrentFunction);
 	DEBUG_S(" gpCurrentFunction->Arguments = %p\n", gpCurrentFunction->Arguments);
-	for( tSymbol *sym = gpCurrentFunction->Arguments; sym; sym = sym->Next )
-	{
-		DEBUG_S(" sym = %p\n", sym);
-		DEBUG_S(" strcmp(Name, '%s')\n", sym->Name);
-		if(strcmp(Name, sym->Name) == 0)
-			return sym;
-	}
+	//for( tSymbol *sym = gpCurrentFunction->Arguments; sym; sym = sym->Next )
+	//{
+	//	DEBUG_S(" sym = %p\n", sym);
+	//	DEBUG_S(" strcmp(Name, '%s')\n", sym->Name);
+	//	if(strcmp(Name, sym->Name) == 0)
+	//		return sym;
+	//}
 	return NULL;
 }
 
@@ -141,9 +141,48 @@ int Symbol_AddGlobalVariable(const tType *Type, enum eLinkage Linkage, const cha
 	return 0;
 }
 
+int Symbol_AddFunction(const tType *Type, enum eLinkage Linkage, const char *Name, tAST_Node *Code)
+{
+	for( tSymbol *sym = gpGlobalSymbols; sym; sym = sym->Next )
+	{
+		if( strcmp(Name, sym->Name) == 0 )
+		{
+			if( Types_Compare(Type, sym->Type) ) {
+				//SyntaxError(NULL, "Redefinition of %s as incomatible type", Name);
+				return 1;
+			}
+			// Ok to redefine if
+			// 1. Linkage doesn't mismatch badly (i.e. extern+static)
+			// TODO: Check linkage
+			// 2. Existing doesn't have code (and adding code)
+			if( Code ) {
+				if( sym->Value ) {
+					//SyntaxError(NULL, "Redefinition of %s", Name);
+					return 1;
+				}
+				sym->Value = Code;
+			}
+			return 1;
+		}
+	}
+	
+	tSymbol *new_sym = malloc( sizeof(tSymbol) + strlen(Name) + 1 );
+	new_sym->Linkage = Linkage;
+	new_sym->Name = (void*)(new_sym+1);
+	strcpy( (void*)(new_sym+1), Name );
+	new_sym->Type = Type;
+	new_sym->Line = 0;	// TODO: Get line
+	new_sym->Offset = 0;	// not used yet
+	new_sym->Value = Code;
+
+	new_sym->Next = gpGlobalSymbols;
+	gpGlobalSymbols = new_sym;
+	return 0;
+}
+
 void Symbol_SetFunctionVariableArgs(tFunction *Func)
 {
-	Func->bVaArgs = 1;
+	//Func->bVaArgs = 1;
 }
 
 void Symbol_SetFunctionCode(tFunction *Fcn, void *Block)

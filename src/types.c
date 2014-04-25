@@ -17,6 +17,8 @@
 tTypedef	*gpTypedefs = NULL;
  int	giTypeCacheSize;
 tType	**gpTypeCache;
+ int	giFcnSigCacheSize;
+tFunctionSig	**gpFcnSigCache;
 
 // === CODE ===
 tType *Types_GetTypeFromName(const char *Name, size_t Len)
@@ -152,6 +154,53 @@ tType *Types_CreatePointerType(const tType *TgtType)
 	return Types_Register(&ret);
 }
 
+int Types_CompareFcn_I(const void *TP1, const void *TP2)
+{
+	return Types_CompareFcn(*(void**)TP1, *(void**)TP2);
+}
+
+tFunctionSig *Types_int_GetFunctionSig(const tType *Return, bool VariableArgs, int NArgs, const tType **ArgTypes)
+{
+	struct {
+		tFunctionSig	sig;
+		const tType	args[NArgs];
+	} key;
+	void	*keyptr = &key;
+	
+	key.sig.Return = Return;
+	key.sig.bIsVarg = VariableArgs;
+	key.sig.nArgs = NArgs;
+	for(int i = 0; i < NArgs; i ++)
+		key.sig.ArgTypes[i] = ArgTypes[i];
+	
+	
+	tFunctionSig *ret = bsearch(&keyptr, gpFcnSigCache, giFcnSigCacheSize, sizeof(void*), Types_CompareFcn_I);
+	if(ret)
+		return ret;
+	
+	gpFcnSigCache = realloc(gpFcnSigCache, (giFcnSigCacheSize+1)*sizeof(void*));
+	assert(gpFcnSigCache);
+	size_t	size = sizeof(tFunctionSig) + sizeof(const tType*)*NArgs;
+	ret = malloc( size );
+	memcpy( ret, &key, size);
+	gpFcnSigCache[giFcnSigCacheSize] = ret;
+	giFcnSigCacheSize ++;
+
+	qsort(gpFcnSigCache, giFcnSigCacheSize, sizeof(void*), Types_CompareFcn_I);
+
+	return ret;
+}
+
+tType *Types_CreateFunctionType(const tType *Return, bool VariableArgs, int NArgs, const tType **ArgTypes)
+{
+	tFunctionSig	*fsig = Types_int_GetFunctionSig(Return, VariableArgs, NArgs, ArgTypes);
+	tType ret = {
+		.Class = TYPECLASS_FUNCTION,
+		.Function = fsig
+	};
+	return Types_Register(&ret);
+}
+
 tType *Types_ApplyQualifiers(const tType *SrcType, unsigned int Qualifiers)
 {
 	tType ret = *SrcType;
@@ -161,10 +210,33 @@ tType *Types_ApplyQualifiers(const tType *SrcType, unsigned int Qualifiers)
 	return Types_Register(&ret);
 }
 
+int Types_CompareFcn(const tFunctionSig *S1, const tFunctionSig *S2)
+{
+	if( S1 == S2 )	return 0;
+	 int	rv;
+	#define CMPFLD(fld)	if(S1->fld != S2->fld) return (S1->fld - S2->fld)
+	#define CMPEXT(fcn, fld)	rv = fcn(S1->fld, S2->fld); if(rv) return rv
+	
+	CMPFLD(nArgs);
+	CMPFLD(bIsVarg);
+	CMPEXT(Types_Compare, Return);
+	for( int i = 0; i < S1->nArgs; i ++ )
+	{
+		CMPEXT(Types_Compare, ArgTypes[i]);
+	}
+
+	// assert(S1 == S2);
+	return 0;
+	#undef CMPFLD
+	#undef CMPEXT
+}
+
 int Types_Compare(const tType *T1, const tType *T2)
 {
+	if( T1 == T2 )	return 0;
 	 int	rv;
 	#define CMPFLD(fld)	if(T1->fld != T2->fld) return (T1->fld - T2->fld)
+	#define CMPEXT(fcn, fld)	rv = fcn(T1->fld, T2->fld); if(rv) return rv
 	CMPFLD(Class);
 	CMPFLD(bConst);
 	CMPFLD(bRestrict);
@@ -178,25 +250,26 @@ int Types_Compare(const tType *T1, const tType *T2)
 		CMPFLD(Integer.Size);
 		break;
 	case TYPECLASS_POINTER:
-		rv = Types_Compare(T1->Pointer, T2->Pointer);
-		if(rv)	return rv;
+		CMPEXT(Types_Compare, Pointer);
 		break;
 	case TYPECLASS_ARRAY:
-		rv = Types_Compare(T1->Array.Type, T2->Array.Type);
-		if(rv)	return rv;
+		CMPEXT(Types_Compare, Array.Type);
+		// TODO: Compare sizes
 		break;
 	case TYPECLASS_REAL:
 		CMPFLD(Real.Size);
 		break;
 	case TYPECLASS_STRUCTURE:
 	case TYPECLASS_UNION:
-		rv = strcmp(T1->StructUnion->Name, T2->StructUnion->Name);
-		if(rv)	return rv;
+		CMPEXT(strcmp, StructUnion->Name);
 		break;
 	case TYPECLASS_FUNCTION:
+		CMPEXT(Types_CompareFcn, Function);
 		assert(!"TODO: Function types");
 		break;
 	}
+	// assert(T1 == T2);
 	return 0;
 	#undef CMPFLD
+	#undef CMPEXT
 }
