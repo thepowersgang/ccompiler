@@ -8,8 +8,10 @@
 typedef struct sAST_Node	tAST_Node;
 #include <stdbool.h>
 
+#include <stddef.h>
 #include <stdint.h>
 #include <symbol.h>
+#include <types.h>
 
 enum eAST_NodeTypes
 {
@@ -90,6 +92,7 @@ struct sAST_Node
 		// Leaves
 		struct {
 			uint64_t	Value;
+			const tType	*Type;
 		}	Integer;
 
 		struct {
