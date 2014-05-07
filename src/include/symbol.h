@@ -96,8 +96,7 @@ extern tType	*Symbol_GetUnion(char *Name);
 extern tType	*Symbol_ParseEnum(char *Name);
 extern tType	*Symbol_GetEnum(char *Name);
 
-extern tSymbol	*Symbol_GetLocalVariable(char *Name);
-extern tSymbol	*Symbol_ResolveSymbol(char *Name);
+extern tSymbol	*Symbol_ResolveSymbol(const char *Name);
 extern  int	Symbol_AddGlobalVariable(const tType *Type, enum eLinkage Linkage, const char *Name, tAST_Node *InitValue);
 
 extern  int	Symbol_AddFunction(const tType *FcnType, enum eLinkage Linkage, const char *Name, tAST_Node *Code);

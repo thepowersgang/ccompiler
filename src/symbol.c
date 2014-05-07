@@ -23,10 +23,10 @@ void	Symbol_EnterBlock(void);
 void	Symbol_LeaveBlock(void);
 tType	*Symbol_ResolveTypedef(char *Name, int Depth);
 tType	*Symbol_CreateIntegralType(int bSigned, int bConst, int Linkage, int Size, int Depth);
-tSymbol	*Symbol_GetLocalVariable(char *Name);
-tSymbol	*Symbol_ResolveSymbol(char *Name);
+//tSymbol	*Symbol_ResolveSymbol(const char *Name);
  int	Symbol_GetSymClass(tSymbol *Symbol);
 // int	Symbol_AddGlobalVariable(tType *Type, enum eLinkage Linkage, const char *Name, tAST_Node *InitValue);
+// int	Symbol_AddFunction(tType *Type, enum eLinkage Linkage, const char *Name, tAST_Node *Code);
 void	Symbol_SetFunction(tFunction *Fcn);
 void	Symbol_SetFunctionCode(tFunction *Fcn, void *Block);
 void	Symbol_DumpTree(void);
@@ -96,25 +96,14 @@ tSymbol *Symbol_GetLocalVariable(char *Name)
 	return NULL;
 }
 
-tSymbol *Symbol_ResolveSymbol(char *Name)
+tSymbol *Symbol_ResolveSymbol(const char *Name)
 {
 	DEBUG_S("Symbol_ResolveSymbol: (Name='%s')\n", Name);
+	for(tSymbol *sym = gpGlobalSymbols; sym; sym = sym->Next)
 	{
-		tSymbol	*sym = gpGlobalSymbols;
-		for(; sym; sym = sym->Next)
-		{
-			DEBUG_S(" Symbol_ResolveSymbol: sym = %p\n", sym);
-			if(strcmp(Name, sym->Name) == 0)
-				return sym;
-		}
-	}
-	{
-		for(tFunction *fcn = gpFunctions; fcn; fcn = fcn->Next)
-		{
-			DEBUG_S(" Symbol_ResolveSymbol: fcn = %p\n", fcn);
-			if(strcmp(Name, fcn->Sym.Name) == 0)
-				return &fcn->Sym;
-		}
+		DEBUG_S(" Symbol_ResolveSymbol: sym = %p\n", sym);
+		if(strcmp(Name, sym->Name) == 0)
+			return sym;
 	}
 	return NULL;
 }
@@ -123,6 +112,7 @@ int Symbol_AddGlobalVariable(const tType *Type, enum eLinkage Linkage, const cha
 {
 	for( tSymbol *sym = gpGlobalSymbols; sym; sym = sym->Next )
 	{
+		// TODO: Linkage checks?
 		if( strcmp(Name, sym->Name) == 0 ) {
 			return 1;
 		}
