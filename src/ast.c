@@ -298,9 +298,9 @@ tAST_Node *AST_NewArrayIndex(tAST_Node *Var, tAST_Node *Index)
 
 void AST_DeleteNode(tAST_Node *Node)
 {
-	switch(Node->Type & 0xF00)
+	switch(Node->Type)
 	{
-	case NODETYPE_CAT_LEAF:
+	case NODETYPE_INTEGER:
 		free(Node);
 		break;
 	

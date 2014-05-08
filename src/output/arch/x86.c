@@ -277,6 +277,9 @@ void X86_DoAction(FILE *OutFile, int CurBPOfs, tAST_Node *Node, uint8_t Register
 		case NODETYPE_SUBTRACT:
 			fprintf(OutFile, "\tsub eax, %s\n", csaRegEX[reg]);
 			break;
+		default:
+			exit(1);
+			break;
 		}
 		
 		Registers &= ~(1<<reg);

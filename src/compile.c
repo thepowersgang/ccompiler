@@ -8,6 +8,7 @@
 #include <ast.h>
 #include <symbol.h>
 #include <irm.h>
+#include <assert.h>
 
 #define REG_VOID	0
 
@@ -114,9 +115,16 @@ int Compile_ConvertNode(tCompileState *State, tAST_Node *Node, tReg *OutReg)
 		// Clear scope
 		Compile_ClearSubState(&new_state);
 		break; }
+	// > Function call
+	case NODETYPE_FUNCTIONCALL:
+		
+		break;
+	
+	default:
+		assert(!"Forgot a node in compile.c");
 	}
 	
-	// TOOD: Check for return?
+	// TODO: Check for return?
 	
 	return 0;
 }

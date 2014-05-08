@@ -18,28 +18,15 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 {
 	uint64_t	val;
 	
-	switch(Node->Type & 0xF00)
-	{
-	case NODETYPE_CAT_UNARYOPS:
-		if( Node->UniOp.Value->Type != NODETYPE_INTEGER )	return Node;
-		break;
-	
-	case NODETYPE_CAT_BINARYOPS:
-		if( Node->BinOp.Left->Type != NODETYPE_INTEGER )	return Node;
-		if( Node->BinOp.Right->Type != NODETYPE_INTEGER )	return Node;
-		break;
-	
-	default:
-		return Node;
-	}
-	
 	switch(Node->Type)
 	{
 	// -- Unary Operations
 	case NODETYPE_NEGATE:
+		if( Node->UniOp.Value->Type != NODETYPE_INTEGER )	return Node;
 		val = 0 - Node->UniOp.Value->Integer.Value;
 		goto unaryop_common;
 	case NODETYPE_BWNOT:
+		if( Node->UniOp.Value->Type != NODETYPE_INTEGER )	return Node;
 		val = ~Node->UniOp.Value->Integer.Value;
 		goto unaryop_common;
 		
@@ -50,62 +37,32 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 		break;
 	
 	// -- Binary Operations
-	case NODETYPE_ADD:
-		val = Node->BinOp.Left->Integer.Value + Node->BinOp.Right->Integer.Value;
+	#define OPT_BINOP(op) \
+		if( Node->BinOp.Left->Type != NODETYPE_INTEGER )	return Node; \
+		if( Node->BinOp.Right->Type != NODETYPE_INTEGER )	return Node; \
+		val = Node->BinOp.Left->Integer.Value op Node->BinOp.Right->Integer.Value; \
 		goto binop_common;
-	case NODETYPE_SUBTRACT:
-		val = Node->BinOp.Left->Integer.Value - Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_MULTIPLY:
-		val = Node->BinOp.Left->Integer.Value * Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_DIVIDE:
-		val = Node->BinOp.Left->Integer.Value / Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_MODULO:
-		val = Node->BinOp.Left->Integer.Value % Node->BinOp.Right->Integer.Value;
-		goto binop_common;
+	case NODETYPE_ADD:	OPT_BINOP(+)
+	case NODETYPE_SUBTRACT:	OPT_BINOP(-)
+	case NODETYPE_MULTIPLY:	OPT_BINOP(*)
+	case NODETYPE_DIVIDE:	OPT_BINOP(/)	// TODO: Avoid #div0
+	case NODETYPE_MODULO:	OPT_BINOP(%)
 	
-	case NODETYPE_BWOR:
-		val = Node->BinOp.Left->Integer.Value | Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_BWAND:
-		val = Node->BinOp.Left->Integer.Value & Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_BWXOR:
-		val = Node->BinOp.Left->Integer.Value ^ Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_BITSHIFTLEFT:
-		val = Node->BinOp.Left->Integer.Value << Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_BITSHIFTRIGHT:
-		val = Node->BinOp.Left->Integer.Value >> Node->BinOp.Right->Integer.Value;
-		goto binop_common;
+	case NODETYPE_BWOR:	OPT_BINOP(|)
+	case NODETYPE_BWAND:	OPT_BINOP(&)
+	case NODETYPE_BWXOR:	OPT_BINOP(^)
+	case NODETYPE_BITSHIFTLEFT:	OPT_BINOP(<<);
+	case NODETYPE_BITSHIFTRIGHT:	OPT_BINOP(>>);
+	case NODETYPE_EQUALS:   	OPT_BINOP(==);
+	case NODETYPE_NOTEQUALS:	OPT_BINOP(!=);
 	
-	case NODETYPE_EQUALS:
-		val = (Node->BinOp.Left->Integer.Value == Node->BinOp.Right->Integer.Value);
-		goto binop_common;
-	case NODETYPE_NOTEQUALS:
-		val = (Node->BinOp.Left->Integer.Value != Node->BinOp.Right->Integer.Value);
-		goto binop_common;
-	case NODETYPE_LESSTHAN:
-		val = (Node->BinOp.Left->Integer.Value < Node->BinOp.Right->Integer.Value);
-		goto binop_common;
-	case NODETYPE_LESSTHANEQU:
-		val = (Node->BinOp.Left->Integer.Value <= Node->BinOp.Right->Integer.Value);
-		goto binop_common;
-	case NODETYPE_GREATERTHAN:
-		val = (Node->BinOp.Left->Integer.Value > Node->BinOp.Right->Integer.Value);
-		goto binop_common;
-	case NODETYPE_GREATERTHANEQU:
-		val = (Node->BinOp.Left->Integer.Value >= Node->BinOp.Right->Integer.Value);
-		goto binop_common;
-	case NODETYPE_BOOLOR:
-		val = Node->BinOp.Left->Integer.Value || Node->BinOp.Right->Integer.Value;
-		goto binop_common;
-	case NODETYPE_BOOLAND:
-		val = Node->BinOp.Left->Integer.Value && Node->BinOp.Right->Integer.Value;
-		goto binop_common;
+	// TODO: Signed-ness
+	case NODETYPE_LESSTHAN: 	OPT_BINOP(<)
+	case NODETYPE_LESSTHANEQU:	OPT_BINOP(<=)
+	case NODETYPE_GREATERTHAN:	OPT_BINOP(>)
+	case NODETYPE_GREATERTHANEQU:	OPT_BINOP(>=)
+	case NODETYPE_BOOLOR:	OPT_BINOP(||)
+	case NODETYPE_BOOLAND:	OPT_BINOP(&&)
 	
 	binop_common:
 		AST_DeleteNode(Node->BinOp.Left);
@@ -113,6 +70,8 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 		Node->Type = NODETYPE_INTEGER;
 		Node->Integer.Value = val;
 		break;
+	default:
+		return Node;
 	}
 	return Node;
 }

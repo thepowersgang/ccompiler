@@ -19,26 +19,23 @@ enum eAST_NodeTypes
 	NODETYPE_NOOP,
 	
 	// -- Leaves --
-	NODETYPE_CAT_LEAF = 0x100,
+	NODETYPE_FLOAT,
 	NODETYPE_INTEGER,
 	NODETYPE_LOCALVAR,
 	NODETYPE_SYMBOL,
 	NODETYPE_STRING,
 
 	// -- Branches --
-	NODETYPE_CAT_LIST = 0x200,
 	NODETYPE_BLOCK,	// Code Block { <code>; }
 	NODETYPE_FUNCTIONCALL,	// <fcn>(<args>)
 	
 	// Statements
-	NODETYPE_CAT_STATEMENT = 0x300,
 	NODETYPE_IF,	// "if" statement
 	NODETYPE_FOR,	// "for" statement
 	NODETYPE_WHILE,	// "while" statement
 	NODETYPE_RETURN,	// return <value>;
 
 	// Unary Operations
-	NODETYPE_CAT_UNARYOPS = 0x400,
 	NODETYPE_NEGATE,
 	NODETYPE_BWNOT,
 	NODETYPE_DEREF,
@@ -50,7 +47,6 @@ enum eAST_NodeTypes
 	NODETYPE_PREDEC,
 
 	// Binary Operations
-	NODETYPE_CAT_BINARYOPS = 0x500,
 	NODETYPE_ASSIGNOP,	//!< Special
 	NODETYPE_ASSIGN,	//!< Special
 	NODETYPE_INDEX,	//!< Special
@@ -76,13 +72,11 @@ enum eAST_NodeTypes
 	NODETYPE_GREATERTHANEQU,
 	NODETYPE_BOOLOR,
 	NODETYPE_BOOLAND,
-
-	NUM_NODETYPES
 };
 
 struct sAST_Node
 {
-	 int	Type;
+	enum eAST_NodeTypes	Type;
 
 	 int	Line;
 	struct sAST_Node	*NextSibling;	//!< Valid for Code Blocks and Function Calls

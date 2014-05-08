@@ -76,59 +76,57 @@ void Optimiser_ProcessNodeList(tOptimiseCallback *Callback, tAST_Node **FirstPtr
 
 tAST_Node *Optimiser_ProcessNode(tOptimiseCallback *Callback, tAST_Node *Node)
 {
-	switch(Node->Type & 0xF00)
+	switch(Node->Type)
 	{
+	case NODETYPE_NULL:
+	case NODETYPE_NOOP:
+		break;
 	// Leaves are ignored
-	case NODETYPE_CAT_LEAF:	break;
+	case NODETYPE_FLOAT:
+	case NODETYPE_INTEGER:
+	case NODETYPE_LOCALVAR:
+	case NODETYPE_SYMBOL:
+	case NODETYPE_STRING:
+		break;
 	
-	case NODETYPE_CAT_LIST:
-		switch(Node->Type)
-		{
-		case NODETYPE_BLOCK:
-			Optimiser_ProcessNodeList(Callback, &Node->CodeBlock.FirstStatement);
-			break;
+	// List nodes
+	case NODETYPE_BLOCK:
+		Optimiser_ProcessNodeList(Callback, &Node->CodeBlock.FirstStatement);
+		break;
+	case NODETYPE_FUNCTIONCALL:
+		REPLACE( Node->FunctionCall.Function );
 		
-		case NODETYPE_FUNCTIONCALL:
-			REPLACE( Node->FunctionCall.Function );
-			
-			Optimiser_ProcessNodeList(Callback, &Node->FunctionCall.FirstArgument);
-			break;
-		}
+		Optimiser_ProcessNodeList(Callback, &Node->FunctionCall.FirstArgument);
 		break;
 	
 	// Statements
-	case NODETYPE_CAT_STATEMENT:
-		switch(Node->Type)
-		{
-		case NODETYPE_IF:
-			REPLACE( Node->If.Test );
-			REPLACE( Node->If.True );
-			REPLACE( Node->If.False );
-			break;
-		case NODETYPE_WHILE:
-			REPLACE( Node->While.Test );
-			REPLACE( Node->While.Action );
-			break;
-		case NODETYPE_FOR:
-			REPLACE(Node->For.Init);
-			REPLACE(Node->For.Test);
-			REPLACE(Node->For.Next);
-			REPLACE(Node->For.Action);
-			break;
-		case NODETYPE_RETURN:	// UniOp
-			REPLACE(Node->UniOp.Value);
-			break;
-		}
+	case NODETYPE_IF:
+		REPLACE( Node->If.Test );
+		REPLACE( Node->If.True );
+		REPLACE( Node->If.False );
+		break;
+	case NODETYPE_WHILE:
+		REPLACE( Node->While.Test );
+		REPLACE( Node->While.Action );
+		break;
+	case NODETYPE_FOR:
+		REPLACE(Node->For.Init);
+		REPLACE(Node->For.Test);
+		REPLACE(Node->For.Next);
+		REPLACE(Node->For.Action);
+		break;
+	case NODETYPE_RETURN:	// UniOp
+		REPLACE(Node->UniOp.Value);
 		break;
 	
 	// Unary Ops
-	case NODETYPE_CAT_UNARYOPS:
+	case NODETYPE_NEGATE ... NODETYPE_PREDEC:
 		REPLACE( Node->UniOp.Value );
 		break;
 	
 	
 	// Binary Operations
-	case NODETYPE_CAT_BINARYOPS:
+	case NODETYPE_ASSIGNOP ... NODETYPE_BOOLAND:
 		REPLACE( Node->BinOp.Left );
 		REPLACE( Node->BinOp.Right );
 		break;
@@ -151,7 +149,7 @@ void Optimiser_Expand(tAST_Node *Node, tOptimiseCallback *Callback)
 	tAST_Node	*tmp;
 	switch(Node->Type & 0xF00)
 	{
-	case NODETYPE_CAT_UNARYOPS:
+	case NODETYPE_NEGATE ... NODETYPE_PREDEC:
 		tmp = Callback(Node->UniOp.Value);
 		if(tmp != Node->UniOp.Value) {
 			free(Node->UniOp.Value);
@@ -159,7 +157,7 @@ void Optimiser_Expand(tAST_Node *Node, tOptimiseCallback *Callback)
 		}
 		break;
 	
-	case NODETYPE_CAT_BINARYOPS:
+	case NODETYPE_ASSIGNOP ... NODETYPE_BOOLAND:
 		tmp = Callback(Node->BinOp.Left);
 		if(tmp != Node->BinOp.Left) {
 			free(Node->BinOp.Left);
@@ -174,7 +172,7 @@ void Optimiser_Expand(tAST_Node *Node, tOptimiseCallback *Callback)
 		break;
 	
 	default:
-		fprintf(stderr, "Optimiser_Expand - TODO: Handle node class %i\n", Node->Type >> 8);
+		fprintf(stderr, "Optimiser_Expand - TODO: Handle node %i\n", Node->Type);
 		break;
 	}
 }
