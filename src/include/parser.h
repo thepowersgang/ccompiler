@@ -16,14 +16,18 @@ extern void	Parse_CodeRoot(tParser *Parser);
 
 struct sParser
 {
-	const char	*BufferBase;
-	struct {
-		const char	*Pos;
+	FILE	*FP;
+	
+	struct sParser_State {
 		const char *Filename;
 		 int	Line;
 		enum eTokens	Token;
+		
+		long long int	Integer;
+		
 		const char	*TokenStart;
 		size_t	TokenLen;
+		char	LocalBuffer[64];	// Functionally the max identifier length
 	} Cur, Prev, Next;
 };
 

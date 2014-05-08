@@ -8,6 +8,8 @@
 
 enum eTokens {
 	TOK_NULL,
+	TOK_NEWLINE,
+	TOK_HASH,
 	TOK_CONST_NUM,
 	TOK_DIVIDE,
 	TOK_ASTERISK,
@@ -97,6 +99,8 @@ enum eTokens {
 #ifdef _TOKEN_C
 const char *csaTOKEN_NAMES[] = {
 	"TOK_NULL",
+	"TOK_NEWLINE",
+	"TOK_HASH",
 	"TOK_CONST_NUM",
 	"TOK_DIVIDE",
 	"TOK_ASTERISK",

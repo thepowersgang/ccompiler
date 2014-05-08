@@ -23,7 +23,9 @@
 #endif
 
 // === PROTOTYPES ===
+enum eTokens	GetToken_Int(tParser *Parser);
 bool	is_ident(char ch);
+void	Parse_MoveState(struct sParser_State *Dst, struct sParser_State *Src);
 
 // === GLOBALS ===
 const struct sRsvdWord {
@@ -65,101 +67,97 @@ const struct sRsvdWord {
 // === CODE ===
 enum eTokens GetToken(tParser *Parser)
 {
-	// Explicit cast, because we actually munge the string
-	char *pos = (char*)Parser->Cur.Pos;
-
+	bool is_first = (Parser->Cur.Token == TOK_NULL);
 	// Save state for PutBack
-	Parser->Prev = Parser->Cur;
+	Parse_MoveState(&Parser->Prev, &Parser->Cur);
 	
 	// Check for saved state from PutBack
-	if( Parser->Next.Token != TOK_NULL ) {
-		Parser->Cur = Parser->Next;
-		Parser->Next.Token = TOK_NULL;
+	if( Parser->Next.Token != TOK_NULL )
+	{
+		Parse_MoveState(&Parser->Cur, &Parser->Next);
 		DEBUG("Fast ret %s", csaTOKEN_NAMES[Parser->Cur.Token]);
 		return Parser->Cur.Token;
 	}
 	
-
-	// Elminate Whitespace (and preprocessor stuff)
-	for( ; isspace(*pos) || pos[0] == '#' || (pos[0] == '/' && (pos[1] == '/' || pos[1] == '*')); pos ++ )
+	GetToken_Int(Parser);
+	while( Parser->Cur.Token == TOK_NEWLINE || is_first )
 	{
-		if( (*pos == '\n' && pos[-1] != '\r') || *pos == '\r' ) {
-			DEBUG("newline");
+		enum eTokens	ret = Parser->Cur.Token;
+		is_first = false;
+		DEBUG("Checking for preprocessor / newlines (%s)", csaTOKEN_NAMES[ret]);
+		while( ret == TOK_NEWLINE ) {
 			Parser->Cur.Line ++;
+			ret = GetToken_Int(Parser);
 		}
-		
-		// C preprocessor line annotations
-		if( *pos == '#' )
+		if( ret == TOK_HASH )
 		{
-			pos ++;
-			if(*pos == ' ' && isdigit(pos[1]))
-			{
-				pos ++;
-				Parser->Cur.Line = strtol(pos, &pos, 10);
-				// Check that there's a string afterwards
-				if(pos[0] != ' ' || pos[1] != '"')
-					goto doPPComment;
-				// Eat ' '  and "
-				pos += 2;
-				Parser->Cur.Filename = pos;
-				while(*pos && *pos != '"')	pos ++;
-				// HACK: Mutilate source string  (it doesn't matter because it's in a comment)
-				*pos = '\0';
-				pos ++;
-				DEBUG("Set '%s':%i", Parser->Cur.Filename, Parser->Cur.Line);
+			// Integer
+			if( GetToken_Int(Parser) != TOK_CONST_NUM ) {
+				// ERROR!
+				while( Parser->Cur.Token != TOK_NEWLINE )
+					GetToken_Int(Parser);
+				continue ;
 			}
-		doPPComment:
-			while( *pos && *pos != '\r' && *pos != '\n')
-				pos++;
-		}
-		
-		// NOTE: These should be eliminated by the preprocessor, but just in case
-		if( *pos == '/' && pos[1] == '/' )
-		{
-			pos += 2;
-			DEBUG("C++ comment");
-			// Line comment
-			while( *pos && *pos != '\n' && *pos != '\r' )
-				pos ++;
-		}
-		
-		if( pos[0] == '/' && pos[1] == '*' )
-		{
-			pos += 2;
-			DEBUG("C comment");
-			// Block comment
-			while( *pos && !(pos[0] == '*' && pos[1] == '/') )
-			{
-				// Detect newlines
-				// - Ignore '\r' if it's part of '\r\n'
-				// - handle '\n'
-				if( (pos[0] == '\r' && pos[1] != '\n') || *pos == '\n' )
-					Parser->Cur.Line ++;
-				pos ++;
+			Parser->Cur.Line = Parser->Cur.Integer;
+			DEBUG("- Line updated to %i", Parser->Cur.Line);
+			// String
+			if( GetToken_Int(Parser) != TOK_STR ) {
+				// ERROR!
+				while( Parser->Cur.Token != TOK_NEWLINE )
+					GetToken_Int(Parser);
+				continue ;
 			}
-			if( *pos )
-				pos += 2-1;
+			DEBUG("- TODO update file to '%.*s'", (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+			// TODO: Set filename
+			
+			// Several integers (optional)
+			while( Parser->Cur.Token != TOK_NEWLINE )
+				GetToken_Int(Parser);
+		}
+	}
+	return Parser->Cur.Token;
+}
+
+enum eTokens GetToken_Int(tParser *Parser)
+{
+	char last_ch;
+	char ch = fgetc(Parser->FP);
+	// Elminate Whitespace (and preprocessor stuff)
+	for( ; isspace(ch); ch = fgetc(Parser->FP) )
+	{
+		if( ch == '\r' ) {
+			ch = fgetc(Parser->FP);
+			if( ch != '\n' ) {
+				DEBUG("Carriage Return");
+				ungetc(ch, Parser->FP);
+				return (Parser->Cur.Token = TOK_NEWLINE);
+			}
+		}
+		if( ch == '\n' ) {
+			DEBUG("Newline");
+			return (Parser->Cur.Token = TOK_NEWLINE);
 		}
 	}
 	
 	enum eTokens	token;
-	Parser->Cur.TokenStart = pos;
-	Parser->Cur.TokenLen = 1;
-	switch(*pos++)
+	Parser->Cur.TokenLen = 0;
+	Parser->Cur.TokenStart = NULL;
+	switch( ch )
 	{
 	// Check for EOF
+	case -1:
 	case '\0':
 		token = TOK_EOF;
 		break;
 	// Divide/Comments
 	case '/':
-		switch(*pos)
+		switch( (ch = fgetc(Parser->FP)) )
 		{
 		case '=':	// Divide Equal
-			pos ++;
 			token = TOK_DIV_EQU;
 			break;
 		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_DIVIDE;
 			break;
 		}
@@ -172,48 +170,51 @@ enum eTokens GetToken(tParser *Parser)
 
 	// Equals
 	case '=':
-		// Compare Equals?
-		if(*pos == '=') {
-			pos ++;
+		switch( (ch = fgetc(Parser->FP)) )
+		{
+		case '=':	// Compare Equals?
 			token = TOK_CMPEQU;
-		}
-		else {
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_ASSIGNEQU;
+			break;
 		}
 		break;
 	// Multiply
 	case '*':
-		if(*pos == '=')	// Times-Equals
+		switch( (ch = fgetc(Parser->FP)) )
 		{
-			pos++;
+		case '=':	// Multiply Equals?
 			token = TOK_MULT_EQU;
-		}
-		else
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_ASTERISK;
+		}
 		break;
 	// Plus
 	case '+':
-		if(*pos == '=')	// Plus-Equals
+		switch( (ch = fgetc(Parser->FP)) )
 		{
-			pos ++;
+		case '=':	// Plus-Equals
 			token = TOK_PLUS_EQU;
-		}
-		else if(*pos == '+')	// Increment
-		{
-			pos ++;
+			break;
+		case '+':	// Increment
 			token = TOK_INC;
-		}
-		else
-		{
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_PLUS;
+			break;
 		}
 		break;
 
 	// Minus
 	case '-':
-		switch(*pos++)
+		switch( (ch = fgetc(Parser->FP)) )
 		{
-		case '|':	// Assignment Subtract
+		case '=':	// Assignment Subtract
 			token = TOK_MINUS_EQU;
 			break;
 		case '>':	// Pointer member
@@ -223,7 +224,7 @@ enum eTokens GetToken(tParser *Parser)
 			token = TOK_DEC;
 			break;
 		default:
-			pos --;
+			ungetc(ch, Parser->FP);
 			token = TOK_MINUS;
 			break;
 		}
@@ -231,7 +232,7 @@ enum eTokens GetToken(tParser *Parser)
 
 	// OR
 	case '|':
-		switch(*pos++)
+		switch( (ch = fgetc(Parser->FP)) )
 		{
 		case '|':	// Boolean OR
 			token = TOK_LOGICOR;
@@ -240,7 +241,7 @@ enum eTokens GetToken(tParser *Parser)
 			token = TOK_OR_EQU;
 			break;
 		default:
-			pos --;
+			ungetc(ch, Parser->FP);
 			token = TOK_OR;
 			break;
 		}
@@ -248,20 +249,21 @@ enum eTokens GetToken(tParser *Parser)
 
 	// XOR
 	case '^':
-		if(*pos == '=')	// XOR-Equals
+		switch( (ch = fgetc(Parser->FP)) )
 		{
-			pos++;
+		case '=':	// XOR-Equals
 			token = TOK_XOR_EQU;
-		}
-		else
-		{
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_XOR;
+			break;
 		}
 		break;
 
 	// AND/Address/Reference
 	case '&':
-		switch(*pos++)
+		switch( (ch = fgetc(Parser->FP)) )
 		{
 		case '&':	// Boolean AND
 			token = TOK_LOGICAND;
@@ -270,7 +272,7 @@ enum eTokens GetToken(tParser *Parser)
 			token = TOK_AND_EQU;
 			break;
 		default:	// Bitwise AND / Address-of
-			pos --;
+			ungetc(ch, Parser->FP);
 			token = TOK_AMP;
 			break;
 		}
@@ -287,40 +289,105 @@ enum eTokens GetToken(tParser *Parser)
 
 	// String
 	case '"':
-		while( !(pos[0] == '"' && pos[-1] != '\\') && *pos != 0 )	// Read String
-			pos ++;
-		if(*pos == '\0')
-			LexerError(Parser, "Unexpected EOF in string");
-		pos ++;	// Eat last Quote
-		token = TOK_STR;
-		break;
-	// Character
-	case '\'':
-		while( !(pos[0] == '\'' && pos[-1] != '\\') && *pos != 0 )	// Read String
-			pos ++;
-		if(*pos == '\0')
-			LexerError(Parser, "Unexpected EOF in character constant");
-		pos ++;	// Eat last Quote
-		token = TOK_CHAR;
-		break;
-	// LT / Shift Left
-	case '<':
-		if(*pos == '<') {
-			pos ++;
-			token = TOK_SHL;
+	// Character constant
+	case '\'': {
+		const char end_ch = ch;
+		size_t	len = 0;
+		char	*buf = Parser->Cur.LocalBuffer;
+		bool escaping = false;
+		do {
+			last_ch = ch;
+			ch = fgetc(Parser->FP);
+			if( escaping ) {
+				switch(ch)
+				{
+				case '"':	ch = '"';	break;
+				case '\'':	ch = '\'';	break;
+				case 'n':	ch = '\n';	break;
+				case 'r':	ch = '\r';	break;
+				case 't':	ch = '\t';	break;
+				case 'b':	ch = '\b';	break;
+				case '0' ... '7':
+					// Octal constant
+					TODO("Octal constants in strings");
+					break;
+				case 'x':
+					// Hex constant
+					TODO("Hex constants in strings");
+					break;
+				default:
+					LexerError(Parser, "Unknown escape sequence '\\%c'", ch);
+					break;
+				}
+			}
+			else if( ch == '\\' ) {
+				escaping = true;
+				continue ;
+			}
+			else {
+				// fall
+			}
+			// Push `ch`
+			if( len == sizeof(Parser->Cur.LocalBuffer) ) {
+				buf = malloc( len + 1 );
+				memcpy(buf, Parser->Cur.LocalBuffer, len);
+			}
+			else if( len > sizeof(Parser->Cur.LocalBuffer) ) {
+				buf = realloc(buf, len + 1);
+			}
+			else {
+			}
+			buf[len++] = ch;
+		} while( !feof(Parser->FP) && !(ch == end_ch && last_ch != '\\') );
+		
+		// Ignore closing quote
+		len --;
+		
+		Parser->Cur.TokenLen = len;
+		Parser->Cur.TokenStart = buf;
+		
+		if( end_ch == '"' ) {
+			if( feof(Parser->FP) )
+				LexerError(Parser, "Unexpected EOF in string");
+			token = TOK_STR;
 		}
 		else {
+			if( feof(Parser->FP) )
+				LexerError(Parser, "Unexpected EOF in character constant");
+			token = TOK_CHAR;
+		}
+		
+		break; }
+	// LT / Shift Left
+	case '<':
+		switch( (ch = fgetc(Parser->FP)) )
+		{
+		case '<':
+			token = TOK_SHL;
+			break;
+		case '=':
+			token = TOK_LTE;
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_LT;
+			break;
 		}
 		break;
 	// GT / Shift Right
 	case '>':
-		if(*pos == '>') {
-			pos ++;
+		switch( (ch = fgetc(Parser->FP)) )
+		{
+		case '>':
 			token = TOK_SHR;
-		}
-		else {
+			break;
+		case '=':
+			token = TOK_GTE;
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_GT;
+			break;
 		}
 		break;
 	// End of Statement (Semicolon)
@@ -333,23 +400,32 @@ enum eTokens GetToken(tParser *Parser)
 		break;
 	// Scope (C++) / Label
 	case ':':
-		if( *pos == ':' ) {
-			pos ++;
+		switch( (ch = fgetc(Parser->FP)) )
+		{
+		case ':':	// C++ Scope
 			token = TOK_SCOPE;
-		}
-		else {
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_COLON;
+			break;
 		}
 		break;
 	// Direct member / ...
 	case '.':
-		if( *pos == '.' && pos[1] == '.' )
+		switch( (ch = fgetc(Parser->FP)) )
 		{
-			pos += 2;
+		case '.':
+			if( fgetc(Parser->FP) != '.' ) {
+				LexerError(Parser, ".. is not a valid token");
+				break;
+			}
 			token =  TOK_VAARG;
-		}
-		else {
+			break;
+		default:
+			ungetc(ch, Parser->FP);
 			token = TOK_DOT;
+			break;
 		}
 		break;
 	// Braces
@@ -361,28 +437,29 @@ enum eTokens GetToken(tParser *Parser)
 	// Brackets
 	case '[':	token = TOK_SQUARE_OPEN;	break;
 	case ']':	token = TOK_SQUARE_CLOSE;	break;
-	
+
+	case '#':	token = TOK_HASH;	break;	
+
 	// Numbers
 	case '0':
-		if( *pos == 'x' ) {
+		if( (ch = fgetc(Parser->FP)) == 'x' )
+		{
 			// Hex
-			pos ++;
-			while( isxdigit(*pos) )
-				pos ++;
-			// TODO: Float
+			fscanf(Parser->FP, "%llx", &Parser->Cur.Integer);
+			// TODO: Float (look for a .)
 		}
 		else {
+			ungetc(ch, Parser->FP);
 			// Octal
-			while( '0' <= *pos && *pos <= '7' )
-				pos ++;
+			fscanf(Parser->FP, "%llo", &Parser->Cur.Integer);
 			// TODO: Float
 		}
 		token = TOK_CONST_NUM;
 		break;
 	case '1' ... '9':
+		ungetc(ch, Parser->FP);
 		// Decimal / float
-		while( isdigit(*pos) )
-			pos ++;
+		fscanf(Parser->FP, "%lld", &Parser->Cur.Integer);
 		// TODO: Float
 		token = TOK_CONST_NUM;
 		break;
@@ -390,11 +467,20 @@ enum eTokens GetToken(tParser *Parser)
 	// Generic (identifiers)
 	default:
 		// Identifier
-		if(is_ident(pos[-1]))
+		if(is_ident(ch))
 		{
-			while(is_ident(*pos))
-				pos ++;
-			Parser->Cur.TokenLen = pos - Parser->Cur.TokenStart;
+			size_t	pos = 0;
+			do {
+				if( pos == sizeof(Parser->Cur.LocalBuffer) ) {
+					LexerError(Parser, "Identifer too long (>%zi bytes)", pos);
+					break;
+				}
+				Parser->Cur.LocalBuffer[pos++] = ch;
+			} while( is_ident( (ch = fgetc(Parser->FP)) ) );
+			// Restore final character
+			ungetc(ch, Parser->FP);
+			Parser->Cur.TokenStart = Parser->Cur.LocalBuffer;
+			Parser->Cur.TokenLen = pos;
 
 			DEBUG("ident/rsvdwd = '%.*s'", (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
 	
@@ -411,16 +497,13 @@ enum eTokens GetToken(tParser *Parser)
 			}
 		}
 		else {
-			fprintf(stderr, "Unknown symbol '%c' (0x%x)\n", pos[-1], pos[-1]);
+			fprintf(stderr, "Unknown symbol '%c' (0x%x)\n", ch, ch);
 			token = TOK_NULL;
 		}
 		break;
 	}
 	
-	Parser->Cur.TokenLen = pos - Parser->Cur.TokenStart;
-	DEBUG("%s '%.*s'", csaTOKEN_NAMES[token], (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
 	Parser->Cur.Token = token;
-	Parser->Cur.Pos = pos;
 	return token;
 }
 
@@ -428,9 +511,8 @@ void PutBack(tParser *Parser)
 {
 	assert( Parser->Cur.Token != TOK_NULL );
 	DEBUG("PutBack: %s", csaTOKEN_NAMES[Parser->Cur.Token]);
-	Parser->Next = Parser->Cur;
-	Parser->Cur = Parser->Prev;
-	Parser->Prev.Token = TOK_NULL;
+	Parse_MoveState(&Parser->Next, &Parser->Cur);
+	Parse_MoveState(&Parser->Cur, &Parser->Prev);
 }
 
 enum eTokens LookAhead(tParser *Parser)
@@ -460,4 +542,10 @@ bool is_ident(char c)
 	if(c == '_')
 		return 1;
 	return 0;
+}
+
+void Parse_MoveState(struct sParser_State *Dst, struct sParser_State *Src)
+{
+	*Dst = *Src;
+	Src->Token = TOK_NULL;
 }

@@ -46,24 +46,20 @@ int main(int argc, char *argv[])
 	InitialiseData();
 
 
-	FILE *infile = fopen(gsInputFile, "r");
+	FILE *infile;
+	
+	if( !gsInputFile || strcmp(gsInputFile, "-") == 0 )
+		infile = stdin;
+	else
+		infile = fopen(gsInputFile, "r");
 	if(!infile)	{
 		fprintf(stderr, "Unable to open file '%s'\n", gsInputFile);
 		exit(1);
 	}
 
-	fseek(infile, 0, SEEK_END);
-	size_t len = ftell(infile);
-	fseek(infile, 0, SEEK_SET);
-	
-	char *file_data = malloc(len+1);
-	fread(file_data, 1, len, infile);
-	file_data[len] = 0;
-	fclose(infile);
-
 	tParser parser = {
-		.BufferBase = file_data,
-		.Cur = {.Pos = file_data, .Filename = gsInputFile, .Line = 1}
+		.FP = infile,
+		.Cur = {.Filename = gsInputFile, .Line = 1}
 	};
 	
 	Parse_CodeRoot(&parser);
@@ -103,6 +99,9 @@ int ParseCommandLine(int argc, char *argv[])
 			// Single-char arguments
 			switch(arg[1])
 			{
+			case '\0':
+				gsInputFile = "-";
+				break;
 			case 'a':
 				gsOutputArch = argv[++i];
 				break;

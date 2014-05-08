@@ -1072,49 +1072,6 @@ tAST_Node *DoValue(tParser *Parser)
 	}
 }
 
-size_t Parse_ConvertString(tParser *Parser, char *Output, const char *Src, size_t SrcLen)
-{
-	size_t	ret = 0;
-	for( int i = 0; i < SrcLen; i++ )
-	{
-		if( Src[i] == '\\' )
-		{
-			i ++;
-			assert(i != SrcLen);	// Lexer shouldn't allow, as it would have escaped closing "
-			char ch = 0;
-			switch(Src[i])
-			{
-			case '"':	ch = '"';	break;
-			case 'n':	ch = '\n';	break;
-			case 'r':	ch = '\r';	break;
-			case 't':	ch = '\t';	break;
-			case 'b':	ch = '\b';	break;
-			case '0' ... '7':
-				// Octal constant
-				TODO("Octal constants in strings");
-				break;
-			case 'x':
-				// Hex constant
-				TODO("Hex constants in strings");
-				break;
-			default:
-				// oopsie
-				break;
-			}
-			if(Output)
-				Output[ret] = ch;
-			ret ++;
-		}
-		else
-		{
-			if(Output)
-				Output[ret] = Src[i];
-			ret ++;
-		}
-	}
-	return ret;
-}
-
 /**
  * \fn tAST_Node *GetSimpleString()
  * \brief Parses a simple string
@@ -1124,14 +1081,10 @@ tAST_Node *GetString(tParser *Parser)
 	if( SyntaxAssert(Parser, GetToken(Parser), TOK_STR) )
 		return NULL;
 
-	// Parse String
-	size_t	len = Parse_ConvertString(Parser, NULL, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
-	char *buf = malloc( len+1 );
-	assert(buf);
-	Parse_ConvertString(Parser, buf, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
-	buf[len] = '\0';
-
-	return AST_NewString( buf, len );
+	char *data = malloc(Parser->Cur.TokenLen+1);
+	memcpy(data, Parser->Cur.TokenStart, Parser->Cur.TokenLen);
+	data[Parser->Cur.TokenLen] = 0;
+	return AST_NewString( data, Parser->Cur.TokenLen );
 }
 
 /**
@@ -1149,11 +1102,12 @@ tAST_Node *GetCharConst(tParser *Parser)
 //		SyntaxWarning("Multi-byte character constants are not recommended");
 
 	// Parse constant (local machine endian?)
-	size_t len = Parse_ConvertString(Parser, NULL, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
-	if( len > 8 )
+	if( Parser->Cur.TokenLen > 8 ) {
 		SyntaxError(Parser, "Character constant is over 8-bytes");
+		return NULL;
+	}
 	
-	Parse_ConvertString(Parser, (void*)&val, Parser->Cur.TokenStart+1, Parser->Cur.TokenLen-2);
+	memcpy(&val, Parser->Cur.TokenStart, Parser->Cur.TokenLen);
 
 	return AST_NewInteger(val);
 }
@@ -1179,12 +1133,6 @@ tAST_Node *GetNumeric(tParser *Parser)
 	if( SyntaxAssert(Parser, GetToken(Parser), TOK_CONST_NUM) )
 		return NULL;
 
-	// Create Temporary String
-	GETTOKSTR(temp);
-
-	// Get value
-	long value = strtol( temp, NULL, 0 );
-	DEBUG("'%s' = %li", temp, value);
-	return AST_NewInteger( value );
+	return AST_NewInteger( Parser->Cur.Integer );
 }
 
