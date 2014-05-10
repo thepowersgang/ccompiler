@@ -1,0 +1,10 @@
+thePowersGang's C Compiler
+=====
+
+This is my attempt at writing a C compiler, it's not designed to be fast, just to be (hopefully) compliant.
+
+The main reason I'm writing this is to understand the quirks of the C language, and hopefully use this to write better general code. That and it's a fun challenge to understand how the ideas of optimisation translate into working algorithms.
+
+Requirements:
+- C99 compatible compiler
+- PHP (because I write very evil helper scripts)
