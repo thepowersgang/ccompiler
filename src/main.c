@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
 
 	tParser parser = {
 		.FP = infile,
-		.Cur = {.Filename = gsInputFile, .Line = 1}
+		.Cur = {.Filename = CreateRef(gsInputFile, strlen(gsInputFile)), .Line = 1}
 	};
 	
 	Parse_CodeRoot(&parser);
@@ -150,3 +150,30 @@ void PrintUsage(const char *exename)
 		" -h\t\t Print this message\n"
 		"", exename );
 }
+
+void *CreateRef(const void *Data, size_t Len)
+{
+	int *ret = malloc(sizeof(int) + Len+1);
+	*ret = 1;
+	memcpy(ret+1, Data, Len);
+	((char*)(ret+1))[Len] = 0;
+	return ret + 1;
+}
+void Ref(void *RefedData)
+{
+	int *ret = RefedData;
+	ret --;
+	*ret += 1;
+}
+void Deref(void *RefedData)
+{
+	if(!RefedData)	return ;
+	int *ret = RefedData;
+	ret --;
+	*ret -= 1;
+	if( *ret == 0 )
+	{
+		free(ret);
+	}
+}
+

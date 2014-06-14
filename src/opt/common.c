@@ -9,7 +9,7 @@
  * 
  * Performs optimisations on the AST
  */
-#define DEBUG	0
+#define DEBUG_ENABLED
 #include <global.h>
 #include <ast.h>
 #include <symbol.h>

@@ -117,7 +117,7 @@ int Compile_ConvertNode(tCompileState *State, tAST_Node *Node, tReg *OutReg)
 		break; }
 	// > Function call
 	case NODETYPE_FUNCTIONCALL:
-		
+		// - Get function pointer
 		break;
 	
 	default:

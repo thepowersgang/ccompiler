@@ -13,7 +13,6 @@
 typedef struct sSymbol	tSymbol;
 typedef struct sCodeBlock	tCodeBlock;
 typedef struct sFunction	tFunction;
-typedef struct sStruct	tStruct;
 
 #include <ast.h>
 #include <types.h>
@@ -66,18 +65,6 @@ struct sFunction
 	tSymbol	Sym;
 
 	const char *ArgNames[];
-};
-
-struct sStruct
-{
-	struct sStruct	*Next;
-	tType	*Type;
-	char	*Name;
-	 int	NumElements;
-	struct {
-		tType	*Type;
-		char	*Name;
-	}	*Elements;
 };
 
 // === GLOBALS ===

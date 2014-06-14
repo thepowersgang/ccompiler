@@ -7,7 +7,6 @@
  *
  * symbol.c - Global and Local symbol manipulation
  */
-#define DEBUG	0
 #include <global.h>
 #include <symbol.h>
 #include <string.h>
@@ -35,7 +34,6 @@ tType	*Symbol_GetStruct(char *Name);
 tType	*Symbol_ParseUnion(char *Name);
 tType	*Symbol_GetUnion(char *Name);
 tType	*Symbol_ParseEnum(char *Name);
-tType	*Symbol_GetEnum(char *Name);
 
 // === GLOBALS ===
 tFunction	*gpFunctions = NULL;
@@ -196,35 +194,5 @@ void Symbol_DumpTree(void)
 		AST_DumpTree(fcn->Code, 1);
 	}
 	#endif
-}
-
-// --- Structures, Unions and Enums ---
-tType *Symbol_GetStruct(char *Name)
-{
-	for( tStruct *ele = gpStructures; ele; ele = ele->Next )
-	{
-		if(strcmp(ele->Name, Name) == 0)
-		{
-			return ele->Type;
-		}
-	}
-	return NULL;
-}
-
-tType *Symbol_GetUnion(char *Name)
-{
-	for( tStruct *ele = gpUnions; ele; ele = ele->Next )
-	{
-		if(strcmp(ele->Name, Name) == 0)
-		{
-			return ele->Type;
-		}
-	}
-	return NULL;
-}
-
-tType *Symbol_GetEnum(char *Name)
-{
-	return NULL;
 }
 

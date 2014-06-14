@@ -258,6 +258,14 @@ tAST_Node *AST_NewUniOp(int Op, tAST_Node *Value)
 	return ret;
 }
 
+tAST_Node *AST_NewCast(const tType *Type, tAST_Node *Value)
+{
+	tAST_Node	*ret = AST_NewNode(NODETYPE_CAST);
+	ret->Cast.Value = Value;
+	ret->Cast.Type = Type;
+	return ret;
+}
+
 tAST_Node *AST_NewSymbol(const char *Name)
 {
 	tAST_Node	*ret = AST_NewNode(NODETYPE_SYMBOL);

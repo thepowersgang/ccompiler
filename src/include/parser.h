@@ -19,7 +19,7 @@ struct sParser
 	FILE	*FP;
 	
 	struct sParser_State {
-		const char *Filename;
+		char *Filename;
 		 int	Line;
 		enum eTokens	Token;
 		

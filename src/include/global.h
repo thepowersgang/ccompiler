@@ -6,11 +6,15 @@ GLOBAL.H
 #ifndef _GLOBAL_H
 #define _GLOBAL_H
 
-#if DEBUG
-# define DEBUG_S(...)	printf(__VA_ARGS__)
+#ifdef DEBUG_ENABLED
+#define IF_DEBUG(code)	do{code;}while(0)
+#define DEBUG_S(str, v...)	printf(str ,## v )
 #else
-# define DEBUG_S(...)
+#define IF_DEBUG(code)	do{}while(0)
+#define DEBUG_S(...)	do{}while(0)
 #endif
+#define DEBUG_NL(str, v...)	DEBUG_S("DEBUG %s:%i: %s "str, __FILE__, __LINE__, __func__ ,## v )
+#define DEBUG(str, v...)	DEBUG_NL(str"\n" ,## v)
 
 #define ACC_ERRPTR	((void*)-1)
 
@@ -21,6 +25,10 @@ GLOBAL.H
 
 #include <stdlib.h>
 #include <stdio.h>
+
+extern void	*CreateRef(const void *Data, size_t Len);
+extern void	Ref(void *RefedData);
+extern void	Deref(void *RefedData);
 
 extern int	GetVariableId();
 extern int	GetCodeOffset();

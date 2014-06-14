@@ -6,7 +6,7 @@
  * - Lexer
  */
 #define _TOKEN_C	1
-#define DEBUG_ENABLED
+//#define DEBUG_ENABLED
 #include <global.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,12 +15,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <parser.h>
-
-#ifdef DEBUG_ENABLED
-#define DEBUG(str, v...)	printf("DEBUG %s:%i: %s "str"\n", __FILE__, __LINE__, __func__ ,## v );
-#else
-#define DEBUG(...)	do{}while(0)
-#endif
 
 // === PROTOTYPES ===
 enum eTokens	GetToken_Int(tParser *Parser);
@@ -58,10 +52,17 @@ const struct sRsvdWord {
 	{"static", TOK_RWORD_STATIC},
 	{"inline", TOK_RWORD_INLINE},
 	{"register", TOK_RWORD_REGISTER},
+	{"typedef", TOK_RWORD_TYPEDEF},
+	{"auto", TOK_RWORD_AUTO},
 	// Class
 	{"const", TOK_RWORD_CONST},
 	{"restrict", TOK_RWORD_RESTRICT},
 	{"volatile", TOK_RWORD_VOLATILE},
+	// Compound
+	{"struct", TOK_RWORD_STRUCT},
+	{"union", TOK_RWORD_UNION},
+	{"enum", TOK_RWORD_ENUM},
+	{"sizeof", TOK_RWORD_SIZEOF},
 };
 
 // === CODE ===
@@ -107,8 +108,9 @@ enum eTokens GetToken(tParser *Parser)
 					GetToken_Int(Parser);
 				continue ;
 			}
-			DEBUG("- TODO update file to '%.*s'", (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
-			// TODO: Set filename
+			DEBUG("- Update file to '%.*s'", (int)Parser->Cur.TokenLen, Parser->Cur.TokenStart);
+			Deref(Parser->Cur.Filename);
+			Parser->Cur.Filename = CreateRef(Parser->Cur.TokenStart, Parser->Cur.TokenLen);
 			
 			// Several integers (optional)
 			while( Parser->Cur.Token != TOK_NEWLINE )
@@ -546,6 +548,8 @@ bool is_ident(char c)
 
 void Parse_MoveState(struct sParser_State *Dst, struct sParser_State *Src)
 {
+	Deref(Dst->Filename);
+	Ref(Src->Filename);
 	*Dst = *Src;
 	Src->Token = TOK_NULL;
 }

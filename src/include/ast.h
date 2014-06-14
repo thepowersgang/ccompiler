@@ -18,24 +18,24 @@ enum eAST_NodeTypes
 	NODETYPE_NULL,
 	NODETYPE_NOOP,
 	
-	// -- Leaves --
+	//  2 -- Leaves --
 	NODETYPE_FLOAT,
 	NODETYPE_INTEGER,
 	NODETYPE_LOCALVAR,
 	NODETYPE_SYMBOL,
 	NODETYPE_STRING,
 
-	// -- Branches --
+	//  7 -- Branches --
 	NODETYPE_BLOCK,	// Code Block { <code>; }
 	NODETYPE_FUNCTIONCALL,	// <fcn>(<args>)
 	
-	// Statements
+	//  9 Statements
 	NODETYPE_IF,	// "if" statement
 	NODETYPE_FOR,	// "for" statement
 	NODETYPE_WHILE,	// "while" statement
 	NODETYPE_RETURN,	// return <value>;
 
-	// Unary Operations
+	// 13 Unary Operations
 	NODETYPE_NEGATE,
 	NODETYPE_BWNOT,
 	NODETYPE_DEREF,
@@ -45,8 +45,10 @@ enum eAST_NodeTypes
 	NODETYPE_POSTDEC,
 	NODETYPE_PREINC,
 	NODETYPE_PREDEC,
+	
+	NODETYPE_CAST,
 
-	// Binary Operations
+	// 22 Binary Operations
 	NODETYPE_ASSIGNOP,	//!< Special
 	NODETYPE_ASSIGN,	//!< Special
 	NODETYPE_INDEX,	//!< Special
@@ -103,6 +105,11 @@ struct sAST_Node
 			const char	*Name;	//! Resolved in code generation, but checked on compilation
 		}	Symbol;
 
+		struct {
+			struct sAST_Node	*Value;
+			const tType	*Type;
+		}	Cast;
+		
 		// Branches
 		struct {
 			struct sAST_Node	*To;	//!< Sanity Checked
@@ -168,6 +175,7 @@ extern tAST_Node	*AST_NewAssign(tAST_Node *To, tAST_Node *From);
 extern tAST_Node	*AST_NewAssignOp(tAST_Node *To, int Op, tAST_Node *From);
 extern tAST_Node	*AST_NewBinOp(int Op, tAST_Node *Left, tAST_Node *Right);
 extern tAST_Node	*AST_NewUniOp(int Op, tAST_Node *Value);
+extern tAST_Node	*AST_NewCast(const tType *Type, tAST_Node *Value);
 extern tAST_Node	*AST_NewSymbol(const char *Name);
 extern tAST_Node	*AST_NewLocalVar(tSymbol *Sym);
 extern tAST_Node	*AST_NewString(void *Data, size_t Length);

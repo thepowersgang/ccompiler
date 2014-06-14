@@ -1,0 +1,3 @@
+#!/bin/sh
+make -C src/
+cpp -I src/include/ src/parser/expr.c -D__inline=inline -D__attribute__\(...\)= -D__extension__= -D__builtin_va_list=void* -D__asm__\(...\)= | ./cc -

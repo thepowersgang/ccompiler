@@ -9,6 +9,7 @@
  * 
  * Optimises out Arithmatic and Bitwise operations on constants
  */
+#define DEBUG_ENABLED
 #include <global.h>
 #include <ast.h>
 #include <optimiser.h>
@@ -18,6 +19,8 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 {
 	uint64_t	val;
 	
+	DEBUG("Node=%p{%i}", Node, Node->Type);
+
 	switch(Node->Type)
 	{
 	// -- Unary Operations
@@ -29,7 +32,27 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 		if( Node->UniOp.Value->Type != NODETYPE_INTEGER )	return Node;
 		val = ~Node->UniOp.Value->Integer.Value;
 		goto unaryop_common;
-		
+	
+	case NODETYPE_CAST:
+		Node->Cast.Value = Opt1_Optimise(Node->Cast.Value);
+		if( Node->Cast.Value->Type != NODETYPE_INTEGER )	return Node;
+		val = Node->Cast.Value->Integer.Value;
+		switch(Node->Cast.Type->Class)
+		{
+		case TYPECLASS_INTEGER:
+			switch(Node->Cast.Type->Integer.Size)
+			{
+			case INTSIZE_CHAR:	val &= 0xFF;
+			case INTSIZE_SHORT:	val &= 0xFFFF;
+			case INTSIZE_INT:	val &= 0xFFFFFFFF;	break;
+			case INTSIZE_LONG:	val &= 0xFFFFFFFF;	break;
+			case INTSIZE_LONGLONG:	break;
+			}
+			break;
+		default:	return Node;
+		}
+		goto unaryop_common;
+	
 	unaryop_common:
 		AST_DeleteNode(Node->UniOp.Value);
 		Node->Type = NODETYPE_INTEGER;
@@ -38,9 +61,12 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 	
 	// -- Binary Operations
 	#define OPT_BINOP(op) \
+		Node->BinOp.Left = Opt1_Optimise(Node->BinOp.Left);\
+		Node->BinOp.Right = Opt1_Optimise(Node->BinOp.Right);\
 		if( Node->BinOp.Left->Type != NODETYPE_INTEGER )	return Node; \
 		if( Node->BinOp.Right->Type != NODETYPE_INTEGER )	return Node; \
 		val = Node->BinOp.Left->Integer.Value op Node->BinOp.Right->Integer.Value; \
+		DEBUG("> %li %s %li = %li", Node->BinOp.Left->Integer.Value, #op, Node->BinOp.Right->Integer.Value, val);\
 		goto binop_common;
 	case NODETYPE_ADD:	OPT_BINOP(+)
 	case NODETYPE_SUBTRACT:	OPT_BINOP(-)

@@ -7,11 +7,13 @@
  *
  * types.c - Datatype manipulation
  */
-#define DEBUG	0
+#define DEBUG_ENABLED
 #include <global.h>
 #include <symbol.h>
 #include <string.h>
 #include <assert.h>
+
+// === PROTOTYPES ===
 
 // === GLOBALS ===
 tTypedef	*gpTypedefs = NULL;
@@ -19,9 +21,13 @@ tTypedef	*gpTypedefs = NULL;
 tType	**gpTypeCache;
  int	giFcnSigCacheSize;
 tFunctionSig	**gpFcnSigCache;
+tStruct	*gpStructures;
+tStruct	*gpUnions;
+tEnumValue	*gaEnumValues;
+tEnum	*gpEnums;
 
 // === CODE ===
-tType *Types_GetTypeFromName(const char *Name, size_t Len)
+const tType *Types_GetTypeFromName(const char *Name, size_t Len)
 {
 	for( tTypedef *td = gpTypedefs; td; td = td->Next )
 	{
@@ -34,6 +40,40 @@ tType *Types_GetTypeFromName(const char *Name, size_t Len)
 	return NULL;
 }
 
+int Types_RegisterTypedef(const char *Name, size_t NameLen, const tType *Type)
+{
+	DEBUG_NL("(Name=%.*s, Type=", (int)NameLen, Name);
+	IF_DEBUG( Types_Print(stdout, Type) );
+	DEBUG_S(")\n");
+	tTypedef **pnp = &gpTypedefs;
+	for( tTypedef *td = gpTypedefs; td; pnp = &td->Next, td = td->Next )
+	{
+		int cmp = strncmp(td->Name, Name, NameLen);
+		if( cmp > 0 )
+			break;
+		if( cmp == 0 && strlen(td->Name) == NameLen )
+		{
+			if( Types_Compare(td->Base, Type) != 0 ) {
+				// Error! Incompatible redefinition
+				return -1;
+			}
+			// Compatible redefinition
+			return 1;
+		}
+	}
+	
+	tTypedef *td = malloc( sizeof(tTypedef) + NameLen + 1 );
+	td->Name = (char*)(td + 1);
+	memcpy(td+1, Name, NameLen);
+	((char*)(td+1))[NameLen] = 0;
+	td->Base = Type;
+	
+	td->Next = *pnp;
+	*pnp = td;
+	
+	return 0;
+}
+
 int Types_Compare_I(const void *TP1, const void *TP2)
 {
 	return Types_Compare(*(void**)TP1, *(void**)TP2);
@@ -41,19 +81,27 @@ int Types_Compare_I(const void *TP1, const void *TP2)
 
 tType *Types_Register(const tType *Type)
 {
-	tType *ret = bsearch(&Type, gpTypeCache, giTypeCacheSize, sizeof(void*), Types_Compare_I);
-	if(ret)
-		return ret;
+	DEBUG("(Type=%p)", Type);
+	DEBUG_NL("Type=");
+	IF_DEBUG( Types_Print(stdout, Type) );
+	DEBUG_S("\n");
+	tType **retp = bsearch(&Type, gpTypeCache, giTypeCacheSize, sizeof(void*), Types_Compare_I);
+	if(retp) {
+		assert(*retp);
+		DEBUG("RETURN %p (cached)", *retp);
+		return *retp;
+	}
 	
 	gpTypeCache = realloc(gpTypeCache, (giTypeCacheSize+1)*sizeof(void*));
 	assert(gpTypeCache);
-	ret = malloc( sizeof(tType) );
+	tType *ret = malloc( sizeof(tType) );
 	*ret = *Type;
 	gpTypeCache[giTypeCacheSize] = ret;
 	giTypeCacheSize ++;
 
 	qsort(gpTypeCache, giTypeCacheSize, sizeof(void*), Types_Compare_I);
 
+	DEBUG("RETURN %p (new)", ret);
 	return ret;
 }
 
@@ -101,14 +149,22 @@ size_t Types_GetSizeOf(const tType *Type)
 		return Type->Array.Count * Types_GetSizeOf(Type->Array.Type);
 	case TYPECLASS_STRUCTURE: {
 		size_t	ret = 0;
-		for(int i = 0; i < Type->StructUnion->NumElements; i ++ )
-			ret += Types_GetSizeOf(Type->StructUnion->Elements[i].Type);
+		for(int i = 0; i < Type->StructUnion->nFields; i ++ )
+			ret += Types_GetSizeOf(Type->StructUnion->Entries[i].Type);
 		return ret; }
 	case TYPECLASS_UNION: {
 		size_t	ret = 0;
-		for(int i = 0; i < Type->StructUnion->NumElements; i ++ )
-			ret = max_size_t(ret, Types_GetSizeOf(Type->StructUnion->Elements[i].Type));
+		for(int i = 0; i < Type->StructUnion->nFields; i ++ )
+			ret = max_size_t(ret, Types_GetSizeOf(Type->StructUnion->Entries[i].Type));
 		return ret; }
+	case TYPECLASS_ENUM:
+		if( Type->Enum->Max == 0 )
+			return 0;
+		if( Type->Enum->Max < 256 )
+			return 1;
+		if( Type->Enum->Max < 256*256 )
+			return 2;
+		return 4;
 	case TYPECLASS_FUNCTION:
 		// Function can't be 'sizeof'd
 		return 0;
@@ -154,6 +210,15 @@ tType *Types_CreatePointerType(const tType *TgtType)
 	return Types_Register(&ret);
 }
 
+tType *Types_CreateArrayType(const tType *Inner, size_t Size)
+{
+	tType ret = {
+		.Class = TYPECLASS_ARRAY,
+		.Array = {Size, Inner}
+		};
+	return Types_Register(&ret);
+}
+
 int Types_CompareFcn_I(const void *TP1, const void *TP2)
 {
 	return Types_CompareFcn(*(void**)TP1, *(void**)TP2);
@@ -174,14 +239,16 @@ tFunctionSig *Types_int_GetFunctionSig(const tType *Return, bool VariableArgs, i
 		key.sig.ArgTypes[i] = ArgTypes[i];
 	
 	
-	tFunctionSig *ret = bsearch(&keyptr, gpFcnSigCache, giFcnSigCacheSize, sizeof(void*), Types_CompareFcn_I);
-	if(ret)
-		return ret;
+	tFunctionSig **ret_p = bsearch(&keyptr, gpFcnSigCache, giFcnSigCacheSize, sizeof(void*), Types_CompareFcn_I);
+	if(ret_p) {
+		assert(*ret_p);
+		return *ret_p;
+	}
 	
 	gpFcnSigCache = realloc(gpFcnSigCache, (giFcnSigCacheSize+1)*sizeof(void*));
 	assert(gpFcnSigCache);
 	size_t	size = sizeof(tFunctionSig) + sizeof(const tType*)*NArgs;
-	ret = malloc( size );
+	tFunctionSig *ret = malloc( size );
 	memcpy( ret, &key, size);
 	gpFcnSigCache[giFcnSigCacheSize] = ret;
 	giFcnSigCacheSize ++;
@@ -201,12 +268,144 @@ tType *Types_CreateFunctionType(const tType *Return, bool VariableArgs, int NArg
 	return Types_Register(&ret);
 }
 
-tType *Types_ApplyQualifiers(const tType *SrcType, unsigned int Qualifiers)
+tType *Types_CreateStructUnionType(bool IsUnion, const tStruct *StructUnion)
 {
+	tType ret = {
+		.Class = (IsUnion ? TYPECLASS_UNION : TYPECLASS_STRUCTURE),
+		.StructUnion = StructUnion
+	};
+	return Types_Register(&ret);
+}
+tType *Types_CreateEnumType(const tEnum *Enum)
+{
+	tType ret = {
+		.Class = TYPECLASS_ENUM,
+		.Enum = Enum
+	};
+	return Types_Register(&ret);
+}
+
+tStruct *Types_GetStructUnion(bool IsUnion, const char *Tag, bool Create)
+{
+	tStruct	**head = (IsUnion ? &gpUnions : &gpStructures);
+	// Search cache for a structure with this tag
+	if( Tag )
+	{
+		for( tStruct *ele = *head; ele; ele = ele->Next )
+		{
+			if(ele->Tag && strcmp(ele->Tag, Tag) == 0)
+			{
+				return ele;
+			}
+		}
+	}
+	
+	if( !Create )
+		return NULL;
+	
+	tStruct	*ret = calloc( 1, sizeof(tStruct) + (Tag ? strlen(Tag)+1 : 0) );
+	
+	if( Tag ) {
+		ret->Tag = (char*)(ret + 1);
+		strcpy(ret->Tag, Tag);
+	}
+	else {
+		ret->Tag = NULL;
+	}
+	
+	ret->Next = *head;
+	*head = ret;
+	
+	return ret;
+}
+
+int Types_AddStructField(tStruct *StructUnion, const tType *Type, const char *Name)
+{
+	if( Name ) {
+		for( int i = 0; i < StructUnion->nFields; i ++ ) {
+			if( strcmp(StructUnion->Entries[i].Name, Name) == 0 )
+				return 1;
+		}
+	}
+	void *tmp = realloc(StructUnion->Entries, (StructUnion->nFields+1)*sizeof(*StructUnion->Entries));
+	if(!tmp)	return 2;
+	StructUnion->Entries = tmp;
+	
+	StructUnion->Entries[StructUnion->nFields].Name = (Name ? strdup(Name) : NULL);
+	StructUnion->Entries[StructUnion->nFields].Type = Type;
+	StructUnion->nFields += 1;
+	return 0;
+}
+
+tEnum *Types_GetEnum(const char *Tag, bool Create)
+{
+	// Search cache for a structure with this tag
+	if( Tag )
+	{
+		for( tEnum *ele = gpEnums; ele; ele = ele->Next )
+		{
+			if(ele->Tag && strcmp(ele->Tag, Tag) == 0)
+			{
+				return ele;
+			}
+		}
+	}
+	
+	if( !Create )
+		return NULL;
+	
+	tEnum	*ret = calloc( 1, sizeof(tEnum) + (Tag ? strlen(Tag)+1 : 0) );
+	
+	if( Tag ) {
+		ret->Tag = (char*)(ret + 1);
+		strcpy(ret->Tag, Tag);
+	}
+	else {
+		ret->Tag = NULL;
+	}
+	
+	ret->Next = gpEnums;
+	gpEnums = ret;
+	
+	return ret;
+}
+int Types_AddEnumValue(tEnum *Enum, const char *Name, uint64_t Value)
+{
+	//TODO("AddEnumValue");
+	return 1;
+}
+
+const tType *Types_ApplyQualifiers(const tType *SrcType, unsigned int Qualifiers)
+{
+	DEBUG("(SrcType=%p, Qualifiers=%u)", SrcType, Qualifiers);
+	if( Qualifiers == 0 )
+		return SrcType;
 	tType ret = *SrcType;
 	ret.bConst    = !!(Qualifiers & QUALIFIER_CONST);
 	ret.bRestrict = !!(Qualifiers & QUALIFIER_RESTRICT);
 	ret.bVolatile = !!(Qualifiers & QUALIFIER_VOLATILE);
+	return Types_Register(&ret);
+}
+
+const tType *Types_Merge(const tType *Outer, const tType *Inner)
+{
+	tType	ret;
+	switch( Outer->Class )
+	{
+	case TYPECLASS_VOID:
+		return Inner;
+	case TYPECLASS_POINTER:
+		ret = *Outer;
+		ret.Pointer = Types_Merge(Outer->Pointer, Inner);
+		break;
+	case TYPECLASS_ARRAY:
+		ret = *Outer;
+		ret.Array.Type = Types_Merge(Outer->Array.Type, Inner);
+		break;
+	default:
+		assert(!"Types_Merge called on invalid type");
+		return NULL;
+	}
 	return Types_Register(&ret);
 }
 
@@ -261,11 +460,13 @@ int Types_Compare(const tType *T1, const tType *T2)
 		break;
 	case TYPECLASS_STRUCTURE:
 	case TYPECLASS_UNION:
-		CMPEXT(strcmp, StructUnion->Name);
+		CMPFLD(StructUnion);
+		break;
+	case TYPECLASS_ENUM:
+		CMPFLD(Enum);
 		break;
 	case TYPECLASS_FUNCTION:
 		CMPEXT(Types_CompareFcn, Function);
-		assert(!"TODO: Function types");
 		break;
 	}
 	// assert(T1 == T2);
@@ -273,3 +474,59 @@ int Types_Compare(const tType *T1, const tType *T2)
 	#undef CMPFLD
 	#undef CMPEXT
 }
+
+void Types_Print(FILE *fp, const tType *Type)
+{
+	//fprintf(fp,"(");
+	if(Type->bConst)	fprintf(fp,"const ");
+	if(Type->bRestrict)	fprintf(fp,"restrict ");
+	if(Type->bVolatile)	fprintf(fp,"volatile ");
+	switch(Type->Class)
+	{
+	case TYPECLASS_VOID:	fprintf(fp,"void");	break;
+	case TYPECLASS_POINTER:
+		Types_Print(fp, Type->Pointer);
+		fprintf(fp,"*");
+		break;
+	case TYPECLASS_ARRAY:
+		Types_Print(fp, Type->Array.Type);
+		fprintf(fp,"[%zi]", Type->Array.Count);
+		break;
+	case TYPECLASS_INTEGER:
+		if(Type->Integer.bSigned)	fprintf(fp,"signed ");
+		switch(Type->Integer.Size)
+		{
+		case INTSIZE_CHAR:	fprintf(fp,"char");  	break;
+		case INTSIZE_SHORT:	fprintf(fp,"short"); 	break;
+		case INTSIZE_INT:	fprintf(fp,"int");   	break;
+		case INTSIZE_LONG:	fprintf(fp,"long");  	break;
+		case INTSIZE_LONGLONG:	fprintf(fp,"long long");	break;
+		}
+		break;
+	case TYPECLASS_REAL:
+		switch(Type->Real.Size)
+		{
+		case FLOATSIZE_FLOAT:	fprintf(fp, "float");	break;
+		case FLOATSIZE_DOUBLE:	fprintf(fp, "double");	break;
+		case FLOATSIZE_LONGDOUBLE:	fprintf(fp, "long double");	break;
+		}
+		break;
+	case TYPECLASS_STRUCTURE:	fprintf(fp, "struct %s", Type->StructUnion->Tag);	break;
+	case TYPECLASS_UNION:	fprintf(fp, "union %s", Type->StructUnion->Tag);	break;
+	case TYPECLASS_ENUM:	fprintf(fp, "enum %s", Type->Enum->Tag);	break;
+	case TYPECLASS_FUNCTION:
+		Types_Print(fp, Type->Function->Return);
+		fprintf(fp, " ()(");
+		for( int i = 0; i < Type->Function->nArgs; i ++ )
+		{
+			if(i>0)	fprintf(fp, ", ");
+			Types_Print(fp, Type->Function->ArgTypes[i]);
+		}
+		if(Type->Function->bIsVarg)
+			fprintf(fp, ", ...");
+		fprintf(fp, ")");
+		break;
+	}
+	//fprintf(fp,")");
+}
+
