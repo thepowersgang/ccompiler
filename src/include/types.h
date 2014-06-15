@@ -34,6 +34,7 @@ enum eTypeClass
 
 enum eIntegerSize
 {
+	INTSIZE_BOOL,
 	INTSIZE_CHAR,
 	INTSIZE_SHORT,
 	INTSIZE_INT,

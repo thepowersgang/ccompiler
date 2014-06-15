@@ -33,11 +33,17 @@ enum eAST_NodeTypes
 	NODETYPE_IF,	// "if" statement
 	NODETYPE_FOR,	// "for" statement
 	NODETYPE_WHILE,	// "while" statement
+	NODETYPE_DOWHILE,	// "do{}while" statement
+	NODETYPE_SWITCH,	// "switch" statement
+	NODETYPE_CASE,	// "case/default"
 	NODETYPE_RETURN,	// return <value>;
+	NODETYPE_BREAK,
+	NODETYPE_CONTINUE,
 
-	// 13 Unary Operations
+	// 18 Unary Operations
 	NODETYPE_NEGATE,
 	NODETYPE_BWNOT,
+	NODETYPE_LOGICNOT,
 	NODETYPE_DEREF,
 	NODETYPE_ADDROF,
 
@@ -48,7 +54,7 @@ enum eAST_NodeTypes
 	
 	NODETYPE_CAST,
 
-	// 22 Binary Operations
+	// 28 Binary Operations
 	NODETYPE_ASSIGNOP,	//!< Special
 	NODETYPE_ASSIGN,	//!< Special
 	NODETYPE_INDEX,	//!< Special
@@ -74,6 +80,8 @@ enum eAST_NodeTypes
 	NODETYPE_GREATERTHANEQU,
 	NODETYPE_BOOLOR,
 	NODETYPE_BOOLAND,
+	
+	NODETYPE_CONDITIONAL,
 };
 
 struct sAST_Node
@@ -105,6 +113,11 @@ struct sAST_Node
 			const char	*Name;	//! Resolved in code generation, but checked on compilation
 		}	Symbol;
 
+		struct {
+			struct sAST_Node	*Struct;
+			const char	*Name;
+		}	Member;
+		
 		struct {
 			struct sAST_Node	*Value;
 			const tType	*Type;
@@ -140,6 +153,16 @@ struct sAST_Node
 		}	CodeBlock;
 
 		struct {
+			struct sAST_Node	*Condition;
+			struct sAST_Node	*FirstStatement;
+			struct sAST_Node	*LastStatement;
+		}	Switch;
+		struct {
+			struct sAST_Node	*Value1;
+			struct sAST_Node	*Value2;
+		}	SwitchCase;
+		
+		struct {
 			struct sAST_Node	*Test;
 			struct sAST_Node	*True;
 			struct sAST_Node	*False;
@@ -168,18 +191,24 @@ extern tAST_Node	*AST_AppendNode(tAST_Node *Parent, tAST_Node *Child);
 extern tAST_Node	*AST_NewNoOp(void);
 extern tAST_Node	*AST_NewCodeBlock(void);
 extern tAST_Node	*AST_NewIf(tAST_Node *Test, tAST_Node *True, tAST_Node *False);
+extern tAST_Node	*AST_NewSwitch(tAST_Node *Expr);
+extern tAST_Node	*AST_NewCase(tAST_Node *First, tAST_Node *Last);
 extern tAST_Node	*AST_NewWhile(tAST_Node *Test, tAST_Node *Code);
+extern tAST_Node	*AST_NewDoWhile(tAST_Node *Test, tAST_Node *Code);
 extern tAST_Node	*AST_NewFor(tAST_Node *Init, tAST_Node *Test, tAST_Node *Inc, tAST_Node *Code);
+
 extern tAST_Node	*AST_NewFunctionCall(tAST_Node *Function);
 extern tAST_Node	*AST_NewAssign(tAST_Node *To, tAST_Node *From);
 extern tAST_Node	*AST_NewAssignOp(tAST_Node *To, int Op, tAST_Node *From);
 extern tAST_Node	*AST_NewBinOp(int Op, tAST_Node *Left, tAST_Node *Right);
 extern tAST_Node	*AST_NewUniOp(int Op, tAST_Node *Value);
+extern tAST_Node	*AST_NewConditional(tAST_Node *Condition, tAST_Node *TrueVal, tAST_Node *FalseVal);
 extern tAST_Node	*AST_NewCast(const tType *Type, tAST_Node *Value);
 extern tAST_Node	*AST_NewSymbol(const char *Name);
 extern tAST_Node	*AST_NewLocalVar(tSymbol *Sym);
 extern tAST_Node	*AST_NewString(void *Data, size_t Length);
 extern tAST_Node	*AST_NewInteger(uint64_t Value);
 extern tAST_Node	*AST_NewArrayIndex(tAST_Node *Var, tAST_Node *Index);
+extern tAST_Node	*AST_NewMember(tAST_Node *Struct, const char *Name, size_t NameLen);
 
 #endif

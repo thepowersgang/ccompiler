@@ -42,8 +42,9 @@ tAST_Node *Opt1_Optimise(tAST_Node *Node)
 		case TYPECLASS_INTEGER:
 			switch(Node->Cast.Type->Integer.Size)
 			{
-			case INTSIZE_CHAR:	val &= 0xFF;
-			case INTSIZE_SHORT:	val &= 0xFFFF;
+			case INTSIZE_BOOL:	return Node;
+			case INTSIZE_CHAR:	val &= 0xFF;	break;
+			case INTSIZE_SHORT:	val &= 0xFFFF;	break;
 			case INTSIZE_INT:	val &= 0xFFFFFFFF;	break;
 			case INTSIZE_LONG:	val &= 0xFFFFFFFF;	break;
 			case INTSIZE_LONGLONG:	break;

@@ -125,6 +125,7 @@ size_t Types_GetSizeOf(const tType *Type)
 	case TYPECLASS_INTEGER:
 		switch(Type->Integer.Size)
 		{
+		case INTSIZE_BOOL:	return 1;
 		case INTSIZE_CHAR:	return 1;
 		case INTSIZE_SHORT:	return 2;
 		case INTSIZE_INT:	return 4;
@@ -478,9 +479,6 @@ int Types_Compare(const tType *T1, const tType *T2)
 void Types_Print(FILE *fp, const tType *Type)
 {
 	//fprintf(fp,"(");
-	if(Type->bConst)	fprintf(fp,"const ");
-	if(Type->bRestrict)	fprintf(fp,"restrict ");
-	if(Type->bVolatile)	fprintf(fp,"volatile ");
 	switch(Type->Class)
 	{
 	case TYPECLASS_VOID:	fprintf(fp,"void");	break;
@@ -496,6 +494,7 @@ void Types_Print(FILE *fp, const tType *Type)
 		if(Type->Integer.bSigned)	fprintf(fp,"signed ");
 		switch(Type->Integer.Size)
 		{
+		case INTSIZE_BOOL:	fprintf(fp,"bool");  	break;
 		case INTSIZE_CHAR:	fprintf(fp,"char");  	break;
 		case INTSIZE_SHORT:	fprintf(fp,"short"); 	break;
 		case INTSIZE_INT:	fprintf(fp,"int");   	break;
@@ -527,6 +526,9 @@ void Types_Print(FILE *fp, const tType *Type)
 		fprintf(fp, ")");
 		break;
 	}
+	if(Type->bConst)	fprintf(fp," const");
+	if(Type->bRestrict)	fprintf(fp," restrict");
+	if(Type->bVolatile)	fprintf(fp," volatile");
 	//fprintf(fp,")");
 }
 

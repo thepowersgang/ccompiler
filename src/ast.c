@@ -1,6 +1,7 @@
 /*
  * 
  */
+#define DEBUG_ENABLED
 #include <global.h>
 #include <ast.h>
 #include <stdio.h>
@@ -145,6 +146,8 @@ tAST_Node *AST_NewNode(int Type)
 
 tAST_Node *AST_AppendNode(tAST_Node *Parent, tAST_Node *Child)
 {
+	if( Child == ACC_ERRPTR )
+		return Parent;
 	tAST_Node	*node;
 	switch(Parent->Type)
 	{
@@ -158,6 +161,18 @@ tAST_Node *AST_AppendNode(tAST_Node *Parent, tAST_Node *Child)
 		{
 			Parent->CodeBlock.LastStatement->NextSibling = Child;
 			Parent->CodeBlock.LastStatement = Child;
+		}
+		break;
+	case NODETYPE_SWITCH:
+		if( !Parent->Switch.FirstStatement )
+		{
+			Parent->Switch.FirstStatement = Child;
+			Parent->Switch.LastStatement = Child;
+		}
+		else
+		{
+			Parent->Switch.LastStatement->NextSibling = Child;
+			Parent->Switch.LastStatement = Child;
 		}
 		break;
 	case NODETYPE_FUNCTIONCALL:
@@ -200,9 +215,33 @@ tAST_Node *AST_NewIf(tAST_Node *Test, tAST_Node *True, tAST_Node *False)
 	return ret;
 }
 
+tAST_Node *AST_NewSwitch(tAST_Node *Expr)
+{
+	tAST_Node	*ret = AST_NewNode(NODETYPE_SWITCH);
+	ret->Switch.Condition = Expr;
+	ret->Switch.FirstStatement = NULL;
+	ret->Switch.LastStatement = NULL;
+	return ret;
+}
+tAST_Node *AST_NewCase(tAST_Node *Val1, tAST_Node *Val2)
+{
+	tAST_Node	*ret = AST_NewNode(NODETYPE_CASE);
+	ret->SwitchCase.Value1 = Val1;
+	ret->SwitchCase.Value2 = Val2;
+	return ret;
+}
+
 tAST_Node *AST_NewWhile(tAST_Node *Test, tAST_Node *Code)
 {
 	tAST_Node	*ret = AST_NewNode(NODETYPE_WHILE);
+	ret->While.Test = Test;
+	ret->While.Action = Code;
+	return ret;
+}
+
+tAST_Node *AST_NewDoWhile(tAST_Node *Test, tAST_Node *Code)
+{
+	tAST_Node	*ret = AST_NewNode(NODETYPE_DOWHILE);
 	ret->While.Test = Test;
 	ret->While.Action = Code;
 	return ret;
@@ -245,6 +284,11 @@ tAST_Node *AST_NewAssignOp(tAST_Node *To, int Op, tAST_Node *From)
 
 tAST_Node *AST_NewBinOp(int Op, tAST_Node *Left, tAST_Node *Right)
 {
+	if( !Left || !Right ) {
+		AST_FreeNode(Left);
+		AST_FreeNode(Right);
+		return NULL;
+	}
 	tAST_Node	*ret = AST_NewNode(Op);
 	ret->BinOp.Left = Left;
 	ret->BinOp.Right = Right;
@@ -253,8 +297,19 @@ tAST_Node *AST_NewBinOp(int Op, tAST_Node *Left, tAST_Node *Right)
 
 tAST_Node *AST_NewUniOp(int Op, tAST_Node *Value)
 {
+	if(!Value)
+		return NULL;
 	tAST_Node	*ret = AST_NewNode(Op);
 	ret->UniOp.Value = Value;
+	return ret;
+}
+
+tAST_Node *AST_NewConditional(tAST_Node *Condition, tAST_Node *TrueVal, tAST_Node *FalseVal)
+{
+	tAST_Node *ret = AST_NewNode(NODETYPE_CONDITIONAL);
+	ret->If.Test = Condition;
+	ret->If.True  = TrueVal;
+	ret->If.False = FalseVal;
 	return ret;
 }
 
@@ -304,8 +359,21 @@ tAST_Node *AST_NewArrayIndex(tAST_Node *Var, tAST_Node *Index)
 	return ret;
 }
 
+tAST_Node *AST_NewMember(tAST_Node *Struct, const char *Name, size_t NameLen)
+{
+	tAST_Node *ret = AST_NewNode(NODETYPE_MEMBER);
+	ret->Member.Struct = Struct;
+	char *name = malloc(NameLen+1);
+	memcpy(name, Name, NameLen);
+	name[NameLen] = 0;
+	ret->Member.Name = name;
+	return ret;
+}
+
 void AST_DeleteNode(tAST_Node *Node)
 {
+	DEBUG("Node=%p, ra=%p", Node, __builtin_return_address(0));
+	if(!Node)	return;
 	switch(Node->Type)
 	{
 	case NODETYPE_INTEGER:

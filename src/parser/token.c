@@ -31,9 +31,12 @@ const struct sRsvdWord {
 	{"for", TOK_RWORD_FOR},
 	{"while", TOK_RWORD_WHILE},
 	{"do", TOK_RWORD_DO},
+	{"switch", TOK_RWORD_SWITCH},
 	{"return", TOK_RWORD_RETURN},
 	{"continue", TOK_RWORD_CONTINUE},
 	{"break", TOK_RWORD_BREAK},
+	{"case", TOK_RWORD_CASE},
+	{"default", TOK_RWORD_DEFAULT},
 
 	// Types
 	{"void", TOK_RWORD_VOID},
@@ -99,8 +102,8 @@ enum eTokens GetToken(tParser *Parser)
 					GetToken_Int(Parser);
 				continue ;
 			}
-			Parser->Cur.Line = Parser->Cur.Integer;
-			DEBUG("- Line updated to %i", Parser->Cur.Line);
+			Parser->Cur.Line = Parser->Cur.Integer-1;
+			DEBUG("- Line updated to %i", Parser->Cur.Line+1);
 			// String
 			if( GetToken_Int(Parser) != TOK_STR ) {
 				// ERROR!
@@ -286,7 +289,16 @@ enum eTokens GetToken_Int(tParser *Parser)
 		break;
 	// Boolean NOT
 	case '!':
-		token = TOK_LOGICNOT;
+		switch( (ch = fgetc(Parser->FP)) )
+		{
+		case '=':
+			token = TOK_CMPNEQ;
+			break;
+		default:
+			ungetc(ch, Parser->FP);
+			token = TOK_LOGICNOT;
+			break;
+		}
 		break;
 
 	// String
